@@ -55,6 +55,21 @@
 /* Reset */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+*:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 2px;
+}
+
+.user-select-none { user-select: none; }
+.user-select-text { user-select: text; }
+
 html, body {
   height: 100%;
   overflow: hidden;
@@ -64,7 +79,28 @@ html, body {
   background: var(--c-bg-0);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  user-select: none;
+}
+
+/* Light theme */
+:root[data-theme="light"] {
+  --c-bg-0: #f5f5f5;
+  --c-bg-1: #ffffff;
+  --c-bg-2: #f0f0f0;
+  --c-bg-3: #e0e0e0;
+  --c-bg-hover: #e8e8e8;
+  --c-bg-active: #d0d0d0;
+  --c-surface: #ffffff;
+  --c-border: #ddd;
+  --c-border-light: #e0e0e0;
+  --c-text-0: #111111;
+  --c-text-1: #222222;
+  --c-text-2: #555555;
+  --c-text-3: #888888;
+  --c-text-4: #aaaaaa;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,0.15);
 }
 
 ::-webkit-scrollbar { width: 6px; }
@@ -795,7 +831,7 @@ input, select { font: inherit; color: inherit; }
   width: 90px;
   height: 3px;
   -webkit-appearance: none;
-  background: var(--c-bg-3);
+  background: linear-gradient(to right, var(--c-text-0) 0%, var(--c-text-0) var(--vol-pct, 80%), var(--c-bg-3) var(--vol-pct, 80%), var(--c-bg-3) 100%);
   border-radius: 2px;
   outline: none;
 }
@@ -807,6 +843,11 @@ input, select { font: inherit; color: inherit; }
   background: var(--c-text-0);
   border-radius: 50%;
   cursor: pointer;
+}
+
+.volume-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
 }
 
 /* ============================================
@@ -1119,65 +1160,6 @@ input, select { font: inherit; color: inherit; }
 .queue-item.playing { background: var(--c-bg-2); }
 
 /* ============================================
-   OAuth Settings Form
-   ============================================ */
-.oauth-form {
-  padding: 12px 0;
-}
-
-.oauth-field {
-  margin-bottom: 12px;
-}
-
-.oauth-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--c-text-2);
-  margin-bottom: 6px;
-}
-
-.oauth-input {
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 12px !important;
-}
-
-.oauth-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.oauth-status {
-  margin-top: 12px;
-  padding: 8px 12px;
-  border-radius: var(--r-md);
-  font-size: 12px;
-  display: none;
-}
-
-.oauth-status.success {
-  display: block;
-  background: rgba(46, 204, 113, 0.15);
-  color: #2ecc71;
-  border: 1px solid rgba(46, 204, 113, 0.3);
-}
-
-.oauth-status.error {
-  display: block;
-  background: rgba(231, 76, 60, 0.15);
-  color: #e74c3c;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-}
-
-.oauth-status.info {
-  display: block;
-  background: rgba(52, 152, 219, 0.15);
-  color: #3498db;
-  border: 1px solid rgba(52, 152, 219, 0.3);
-}
-
-/* ============================================
    Toast Notifications
    ============================================ */
 .toast {
@@ -1242,61 +1224,6 @@ input, select { font: inherit; color: inherit; }
   opacity: 1;
 }
 
-/* ============================================
-   Login Modal
-   ============================================ */
-.login-modal {
-  max-width: 400px;
-  width: 90%;
-}
-
-.login-options {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 20px;
-}
-
-.login-option-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 14px 20px;
-  border-radius: var(--r-md);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--t-fast);
-  border: 1px solid var(--c-border);
-  background: var(--c-bg-2);
-  color: var(--c-text-0);
-}
-
-.login-option-btn:hover {
-  background: var(--c-bg-3);
-  border-color: var(--c-accent);
-  transform: translateY(-1px);
-}
-
-.login-option-btn.google-login:hover {
-  border-color: #4285F4;
-}
-
-.login-option-btn.discord-login:hover {
-  border-color: #5865F2;
-}
-
-.login-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-  padding: 40px;
-  color: var(--c-text-1);
-}
-
 .spinner {
   width: 40px;
   height: 40px;
@@ -1310,19 +1237,6 @@ input, select { font: inherit; color: inherit; }
   to { transform: rotate(360deg); }
 }
 
-.login-modal .modal-overlay {
-  display: none;
-}
-
-.modal-overlay.visible {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#loginLoadingModal.visible {
-  display: flex !important;
-}
 .queue-item.playing .song-title { color: var(--c-accent); }
 
 /* Ad Skip Button */
@@ -1346,7 +1260,45 @@ input, select { font: inherit; color: inherit; }
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 .ad-skip-btn:hover {
-  background: var(--c-accent, #7c3aed);
-  border-color: var(--c-accent, #7c3aed);
+  background: var(--c-accent, #e8364e);
+  border-color: var(--c-accent, #e8364e);
   transform: translateY(-1px);
+}
+
+/* ============================================
+   User Select
+   ============================================ */
+input, textarea { user-select: text; }
+.lyric-line { user-select: text; }
+.song-title, .song-artist, .card-title, .card-sub { user-select: text; }
+
+/* ============================================
+   Responsive
+   ============================================ */
+@media (max-width: 1100px) {
+  :root {
+    --sidebar-w: 180px;
+    --panel-w: 300px;
+  }
+}
+
+@media (max-width: 960px) {
+  :root {
+    --sidebar-w: 0px;
+  }
+  .sidebar { display: none; }
+  .player-song { min-width: 140px; width: 200px; }
+  .player-right { width: 200px; min-width: 120px; }
+  .volume-slider { width: 60px; }
+}
+
+@media (max-width: 700px) {
+  :root {
+    --player-h: 70px;
+  }
+  .player-right { display: none; }
+  .player-song { width: 160px; }
+  .page-toolbar { padding: 12px 16px 8px; }
+  .page-scroll { padding: 0 16px 16px; }
+  .card-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
 }

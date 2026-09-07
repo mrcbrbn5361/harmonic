@@ -44,14 +44,6 @@ export class DiscordRPC {
     }
   }
 
-  setAppId(appId: string): void {
-    // Artık kullanıcı tarafından değiştirilemez — sabit ID
-    if (appId && appId !== DISCORD_APP_ID) {
-      store.set('discordAppId', DISCORD_APP_ID);
-      this.connectWithId(DISCORD_APP_ID);
-    }
-  }
-
   getAppId(): string {
     return DISCORD_APP_ID;
   }

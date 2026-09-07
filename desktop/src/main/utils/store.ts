@@ -13,18 +13,22 @@ interface StoreData {
   windowBounds?: { x: number; y: number; width: number; height: number };
   oauthClientId?: string;
   oauthClientSecret?: string;
+  shuffle: boolean;
+  repeat: 'off' | 'all' | 'one';
 }
 
 const defaults: StoreData = {
   theme: 'dark',
-  volume: 0.8,
+  volume: 80,
   quality: 'high',
   autoPlay: true,
   recentlyPlayed: [],
   likedSongs: [],
   queue: [],
   queueIndex: -1,
-  playlists: []
+  playlists: [],
+  shuffle: false,
+  repeat: 'off'
 };
 
 export class StoreManager {
@@ -35,11 +39,19 @@ export class StoreManager {
   }
 
   get<K extends keyof StoreData>(key: K): StoreData[K] {
-    return this.store.get(key);
+    try {
+      return this.store.get(key);
+    } catch {
+      return defaults[key];
+    }
   }
 
   set<K extends keyof StoreData>(key: K, value: StoreData[K]): void {
-    this.store.set(key, value);
+    try {
+      this.store.set(key, value);
+    } catch (e) {
+      console.error('[Store] Set error:', key, e);
+    }
   }
 
   addRecentlyPlayed(song: { id: string; title: string; artist: string; thumbnail: string }): void {

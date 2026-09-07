@@ -7,7 +7,7 @@ import { MUSIC_PARTITION, CHROME_UA } from '../auth/music-auth';
 // Ana renderer'ın <audio> elementi yok — sadece metadata + kontrol IPC'si.
 
 const WATCH_URL = 'https://music.youtube.com/watch?v=';
-const POLL_MS = 1200;
+const POLL_MS = 800;
 
 interface PlaybackUpdate {
   videoId: string;
@@ -203,7 +203,8 @@ export class StreamResolver {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
-        autoplayPolicy: 'no-user-gesture-required'
+        autoplayPolicy: 'no-user-gesture-required',
+        additionalArguments: ['--disable-gpu', '--disable-gpu-compositing']
       }
     });
     this.win.webContents.setAudioMuted(false);
@@ -286,7 +287,7 @@ export class StreamResolver {
 
   private startPolling() {
     if (this.pollTimer) return;
-    this.pollTimer = setInterval(() => this.pollOnce(), POLL_MS * 2);
+    this.pollTimer = setInterval(() => this.pollOnce(), POLL_MS);
   }
 
   // Girişli session ile hesap profilini çek (ayarlar/kullanıcı kartı için).

@@ -244,8 +244,12 @@ export class DiscordGateway {
     // Reconnect (op 7)
     if (op === 7) {
       console.log('[Discord GW] Reconnect isteği alındı');
-      this.disconnect();
-      this.connect(this.token, this.appId);
+      this.stopHeartbeat();
+      if (this.sessionId) {
+        this.sendResume();
+      } else {
+        this.sendIdentify();
+      }
       return;
     }
 

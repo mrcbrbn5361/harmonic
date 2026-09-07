@@ -153,7 +153,9 @@
       if (existing) existing.remove();
       const toast = document.createElement('div');
       toast.className = 'toast toast-' + (type || 'info');
-      toast.innerHTML = '<span>' + message + '</span>';
+      const span = document.createElement('span');
+      span.textContent = message;
+      toast.appendChild(span);
       document.body.appendChild(toast);
       setTimeout(() => toast.classList.add('show'), 10);
       setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 4000);
@@ -163,25 +165,37 @@
 
     document.getElementById('btnLogin')?.addEventListener('click', async () => {
       switchState('Loading');
-      const result = await api?.auth?.login();
-      if (result?.success) {
-        document.getElementById('successUserName').textContent = result.user?.name || 'Kullanıcı';
-        switchState('Success');
-        setTimeout(() => closeWindow(), 2000);
-      } else {
-        if (result?.error?.includes('askıya') || result?.error?.includes('yasak')) {
-          document.getElementById('errorDesc').textContent = result.error;
-          switchState('Banned');
+      try {
+        const result = await api?.auth?.loginMusic();
+        if (result?.success) {
+          const user = await api?.auth?.getMusicUser?.();
+          document.getElementById('successUserName').textContent = user?.name || 'Kullanıcı';
+          switchState('Success');
+          setTimeout(() => closeWindow(), 2000);
         } else {
-          document.getElementById('errorTitle').textContent = 'Giriş hatası';
-          document.getElementById('errorDesc').textContent = result?.error || 'Bilinmeyen bir hata oluştu.';
-          switchState('Error');
+          if (result?.error?.includes('Chrome bulunamadı')) {
+            document.getElementById('errorTitle').textContent = 'Chrome bulunamadı';
+            document.getElementById('errorDesc').textContent = result.error;
+            switchState('Error');
+          } else {
+            document.getElementById('errorTitle').textContent = 'Giriş hatası';
+            document.getElementById('errorDesc').textContent = result?.error || 'Bilinmeyen bir hata oluştu.';
+            switchState('Error');
+          }
         }
+      } catch (e) {
+        document.getElementById('errorTitle').textContent = 'Giriş hatası';
+        document.getElementById('errorDesc').textContent = e?.message || 'Bilinmeyen bir hata oluştu.';
+        switchState('Error');
       }
     });
 
     document.getElementById('btnRetry')?.addEventListener('click', () => switchState('Initial'));
     document.getElementById('btnRetryBanned')?.addEventListener('click', () => switchState('Initial'));
+    document.getElementById('linkPrivacy')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      api?.shell?.openExternal?.('https://github.com/mrcbrbn5361/harmonic/blob/main/PRIVACY.md');
+    });
 
     // Gizli token girişi: logoya 3 kez tıkla
     let logoClickCount = 0;
@@ -223,13 +237,7 @@
       }
     });
 
-    window.api?.auth?.onLoginResult?.((result) => {
-      if (result.success) {
-        document.getElementById('successUserName').textContent = result.user?.name || 'Kullanıcı';
-        switchState('Success');
-        setTimeout(() => closeWindow(), 2000);
-      }
-    });
+
   </script>
 </body>
 </html>

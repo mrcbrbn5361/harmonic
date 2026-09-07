@@ -50,11 +50,14 @@ export class GoogleOAuth {
   }
 
   getGoogleTokens(): OAuthTokens | null {
+    return this.store.get('googleTokens');
+  }
+
+  async refreshIfNeeded(): Promise<void> {
     const tokens = this.store.get('googleTokens');
     if (tokens && Date.now() >= tokens.expires_at - 60000) {
-      this.refreshGoogleToken(tokens);
+      await this.refreshGoogleToken(tokens);
     }
-    return this.store.get('googleTokens');
   }
 
   getGoogleUser(): UserData | null {
@@ -63,7 +66,11 @@ export class GoogleOAuth {
 
   isGoogleAuthenticated(): boolean {
     const tokens = this.getGoogleTokens();
-    return tokens !== null && tokens.access_token !== '';
+    if (tokens && tokens.access_token && Date.now() < tokens.expires_at - 60000) {
+      return true;
+    }
+    // Check if we have a refresh token
+    return tokens !== null && tokens.refresh_token !== undefined && tokens.refresh_token !== '';
   }
 
   // ── Google Login ─────────────────────────────
@@ -340,8 +347,6 @@ export class GoogleOAuth {
   async logoutGoogle(): Promise<void> {
     this.store.set('googleTokens', null);
     this.store.set('googleUser', null);
-    const sessions = session.defaultSession;
-    await sessions.clearStorageData({ storages: ['cookies'] });
   }
 
   // ── Config ───────────────────────────────────

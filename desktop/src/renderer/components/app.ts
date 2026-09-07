@@ -16,9 +16,7 @@
     duration: number;
   }
 
-  interface QueueItem extends Song {
-    streamUrl?: string;
-  }
+  interface QueueItem extends Song {}
 
   // ── State ──────────────────────────────────
   const state = {
@@ -30,6 +28,7 @@
     shuffle: false,
     repeat: 'off' as 'off' | 'all' | 'one',
     volume: 80,
+    lastVolume: 80,
     currentTime: 0,
     duration: 0,
     paused: false,
@@ -38,6 +37,9 @@
     recentlyPlayed: [] as Song[],
     panelOpen: null as 'lyrics' | 'queue' | null,
     lastSearchResults: [] as Song[],
+    libraryTab: 'recent' as 'recent' | 'songs' | 'albums' | 'playlists',
+    searchFilter: 'all' as 'all' | 'songs' | 'videos' | 'albums' | 'artists',
+    navGeneration: 0,
     isLoggedIn: false,
     user: null as { id: string; name: string; email: string; picture: string } | null
   };
@@ -99,6 +101,10 @@
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
   const $$ = (sel: string) => document.querySelectorAll(sel);
 
+  function escapeHtml(str: string): string {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   function formatTime(sec: number): string {
     if (!sec || isNaN(sec)) return '0:00';
     const m = Math.floor(sec / 60);
@@ -111,7 +117,6 @@
   function toggle(el: HTMLElement) { el.classList.contains('open') ? hide(el) : show(el); }
 
   // ── Auth ──────────────────────────────────
-  const INVALID_NAMES = /^(guide|hamburger|menu|account|hesap|profil|open guide|rehber|kılavuz)$/i;
   function sanitizeName(name: string | undefined | null): string {
     if (!name || typeof name !== 'string') return '';
     const trimmed = name.trim();
@@ -127,34 +132,11 @@
 
       if (loggedIn) {
         state.user = await api.auth.getMusicUser();
-        // Self-heal: geçersiz profil ismi varsa temizle
         if (state.user && !sanitizeName(state.user.name)) {
           state.user.name = '';
         }
-        // Giriş yapıldıysa player sayfasına yönlendir
-        const playerSection = $('#playerSection') as HTMLDivElement;
-        const loginSection = $('#loginSection') as HTMLDivElement;
-        const loginPrompt = $('#loginPrompt') as HTMLDivElement;
-        const userSection = $('#userSection') as HTMLDivElement;
-        if (playerSection) {
-          playerSection.style.display = 'block';
-          loginSection.style.display = 'none';
-          loginPrompt.style.display = 'none';
-          userSection.style.display = 'flex';
-        }
       } else {
         state.user = null;
-        // Giriş yapmadıysa welcome sayfasına yönlendir
-        const playerSection = $('#playerSection') as HTMLDivElement;
-        const loginSection = $('#loginSection') as HTMLDivElement;
-        const loginPrompt = $('#loginPrompt') as HTMLDivElement;
-        const userSection = $('#userSection') as HTMLDivElement;
-        if (playerSection) {
-          playerSection.style.display = 'none';
-          loginSection.style.display = 'none';
-          loginPrompt.style.display = 'block';
-          userSection.style.display = 'none';
-        }
       }
       updateAuthUI();
     } catch {
@@ -197,6 +179,8 @@
   function setupAuth() {
     const loginBtn = $('#btnAuthLogin');
     const logoutBtn = $('#btnAuthLogout');
+    const openLoginBtn = $('#btnOpenLogin');
+    const startWelcomeBtn = $('#btnStartWelcome');
 
     if (loginBtn) {
       loginBtn.addEventListener('click', async () => {
@@ -206,7 +190,30 @@
           showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
           return;
         }
-        // Login modalını göster: kullanıcıya "Chrome'da giriş yaptıktan sonra Aktar'a bas" de
+        showChromeImportPrompt();
+      });
+    }
+
+    if (openLoginBtn) {
+      openLoginBtn.addEventListener('click', async () => {
+        showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
+        const opened = await api.auth.loginMusic();
+        if (!opened?.opened) {
+          showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
+          return;
+        }
+        showChromeImportPrompt();
+      });
+    }
+
+    if (startWelcomeBtn) {
+      startWelcomeBtn.addEventListener('click', async () => {
+        showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
+        const opened = await api.auth.loginMusic();
+        if (!opened?.opened) {
+          showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
+          return;
+        }
         showChromeImportPrompt();
       });
     }
@@ -297,16 +304,21 @@
 
   // ── Toast Notification ─────────────────────
   function showToast(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') {
-    const existing = document.querySelector('.toast');
-    if (existing) existing.remove();
-
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.innerHTML = `
-      <span>${message}</span>
-      <button class="toast-close">&times;</button>
-    `;
+    const span = document.createElement('span');
+    span.textContent = message;
+    toast.appendChild(span);
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'toast-close';
+    closeBtn.textContent = '\u00d7';
+    toast.appendChild(closeBtn);
     document.body.appendChild(toast);
+
+    // Stack: position based on existing toasts
+    const existing = document.querySelectorAll('.toast.show');
+    const offset = existing.length * 60;
+    toast.style.bottom = `${100 + offset}px`;
 
     setTimeout(() => toast.classList.add('show'), 10);
     setTimeout(() => {
@@ -323,6 +335,7 @@
   // ── Navigation ─────────────────────────────
   function navigateTo(page: string) {
     state.page = page;
+    state.navGeneration++;
     $$('.nav-link').forEach((l) => {
       l.classList.toggle('active', (l as HTMLElement).dataset.page === page);
     });
@@ -345,7 +358,7 @@
   }
 
   // ── Search ─────────────────────────────────
-  let searchTimer: any;
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
   let lastSearchQuery = '';
 
   function setupSearch() {
@@ -365,9 +378,9 @@
           const suggestions = await ytSuggestions(query);
           if (suggestions.length && document.activeElement === input) {
             dropdown.innerHTML = suggestions.map((s: string) =>
-              `<div class="suggestion-item" data-q="${s.replace(/"/g, '&quot;')}">
+              `<div class="suggestion-item" data-q="${escapeHtml(s)}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <span>${s}</span>
+                <span>${escapeHtml(s)}</span>
               </div>`
             ).join('');
             show(dropdown);
@@ -381,7 +394,7 @@
           }
 
           // Aynı zamanda doğrudan sonuçları da göster
-          if (query.length >= 2 && query !== lastSearchQuery) {
+          if (query.length >= 2) {
             lastSearchQuery = query;
             doSearch(query);
           }
@@ -441,6 +454,7 @@
       chip.addEventListener('click', () => {
         $$('.chip').forEach((c) => c.classList.remove('active'));
         chip.classList.add('active');
+        state.searchFilter = (chip as HTMLElement).dataset.filter as any || 'all';
         lastSearchQuery = '';
         if (input.value) doSearch(input.value);
       });
@@ -467,18 +481,38 @@
       }
 
       let html = '';
+      const filter = state.searchFilter;
 
       // Şarkılar
-      if (results.songs?.length) {
+      if (results.songs?.length && (filter === 'all' || filter === 'songs')) {
         html += `<div class="song-list">${results.songs.map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div>`;
       }
 
       // Videolar
-      if (results.videos?.length) {
+      if (results.videos?.length && (filter === 'all' || filter === 'videos')) {
         html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Videolar</h3><div class="song-list">${results.videos.map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div></div>`;
       }
 
-      container.innerHTML = html;
+      // Albümler
+      if (results.albums?.length && (filter === 'all' || filter === 'albums')) {
+        html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3><div class="card-grid">${results.albums.map((a: any) => `
+          <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
+            <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
+            <div class="card-title">${escapeHtml(a.title)}</div>
+            <div class="card-sub">${escapeHtml(a.artist || '')}</div>
+          </div>`).join('')}</div></div>`;
+      }
+
+      // Sanatçılar
+      if (results.artists?.length && (filter === 'all' || filter === 'artists')) {
+        html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3><div class="card-grid">${results.artists.map((a: any) => `
+          <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
+            <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
+            <div class="card-title">${escapeHtml(a.name)}</div>
+          </div>`).join('')}</div></div>`;
+      }
+
+      container.innerHTML = html || '<div class="empty-state"><p class="empty-text">Sonuç bulunamadı</p></div>';
       attachSongEvents(container);
     } catch (err) {
       container.innerHTML = '<div class="empty-state"><p class="empty-text">Arama hatası</p><p class="empty-hint-text">Lütfen tekrar deneyin</p></div>';
@@ -490,16 +524,16 @@
     const isPlaying = state.currentSong?.id === song.id;
     const isLiked = state.liked.has(song.id);
     return `
-      <div class="song-row${isPlaying ? ' playing' : ''}" data-id="${song.id}">
+      <div class="song-row${isPlaying ? ' playing' : ''}" data-id="${escapeHtml(song.id)}">
         ${num != null ? `<span class="song-num">${num}</span>` : ''}
-        <img class="song-thumb" src="${song.thumbnail}" alt="" loading="lazy" onerror="this.style.display='none'">
+        <img class="song-thumb" src="${escapeHtml(song.thumbnail)}" alt="" loading="lazy" onerror="this.style.display='none'">
         <div class="song-meta">
-          <div class="song-title">${song.title}</div>
-          <div class="song-artist">${song.artist}</div>
+          <div class="song-title">${escapeHtml(song.title)}</div>
+          <div class="song-artist">${escapeHtml(song.artist)}</div>
         </div>
         <span class="song-dur">${formatTime(song.duration)}</span>
         <div class="song-actions">
-          <button class="icon-btn like-btn${isLiked ? ' active' : ''}" data-id="${song.id}">
+          <button class="icon-btn like-btn${isLiked ? ' active' : ''}" data-id="${escapeHtml(song.id)}">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="${isLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
           </button>
         </div>
@@ -564,20 +598,72 @@
 
     // Scrubber
     const scrubber = $('#scrubber');
-    scrubber.addEventListener('click', (e) => {
+    let isDragging = false;
+
+    function seekFromEvent(e: MouseEvent) {
       if (!state.duration) return;
       const rect = scrubber.getBoundingClientRect();
-      const pct = (e.clientX - rect.left) / rect.width;
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
       const t = pct * state.duration;
       api.player.seek(t).catch(() => {});
+    }
+
+    scrubber.addEventListener('click', (e) => {
+      seekFromEvent(e);
+    });
+
+    scrubber.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      seekFromEvent(e);
+      const onMove = (ev: MouseEvent) => {
+        if (!isDragging || !state.duration) return;
+        const rect = scrubber.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+        const t = pct * state.duration;
+        // Update visual immediately during drag
+        $('#scrubberFill').style.width = `${pct * 100}%`;
+        $('#scrubberThumb').style.left = `${pct * 100}%`;
+        $('#timeNow').textContent = formatTime(t);
+      };
+      const onUp = (ev: MouseEvent) => {
+        isDragging = false;
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        if (state.duration) {
+          const rect = scrubber.getBoundingClientRect();
+          const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+          api.player.seek(pct * state.duration).catch(() => {});
+        }
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
     });
 
     // Volume
     const volSlider = $('#volumeSlider') as HTMLInputElement;
+    function updateVolumeSliderBg() {
+      volSlider.style.setProperty('--vol-pct', `${state.volume}%`);
+    }
+    updateVolumeSliderBg();
     volSlider.addEventListener('input', () => {
       state.volume = parseInt(volSlider.value) || 0;
+      if (state.volume > 0) state.lastVolume = state.volume;
+      updateVolumeSliderBg();
       api.player.setVolume(state.volume / 100).catch(() => {});
-      api.store.set('volume', state.volume); // 0-100 scale olarak kaydet
+      api.store.set('volume', state.volume);
+    });
+    // Volume button: mute toggle
+    $('#btnVolume').addEventListener('click', () => {
+      if (state.volume > 0) {
+        state.lastVolume = state.volume;
+        state.volume = 0;
+      } else {
+        state.volume = state.lastVolume || 80;
+      }
+      volSlider.value = String(state.volume);
+      updateVolumeSliderBg();
+      api.player.setVolume(state.volume / 100).catch(() => {});
+      api.store.set('volume', state.volume);
     });
     // state.volume 0-100 aralığında olmalı; initial setVolume
     api.player.setVolume(Math.max(0, Math.min(100, state.volume)) / 100).catch(() => {});
@@ -612,7 +698,7 @@
           $('#timeEnd').textContent = formatTime(state.duration);
         }
       }
-      // Play/pause state — debounce: 2 üst üste aynı state gelmeden değiştirme
+      // Play/pause state — debounce: 1 üst üste aynı state gelmeden değiştirme
       const incomingPlaying = !u.paused && !u.isAd;
       if (incomingPlaying === _lastPollPlaying) {
         _pollCount++;
@@ -620,7 +706,7 @@
         _lastPollPlaying = incomingPlaying;
         _pollCount = 1;
       }
-      if (_pollCount >= 2 && state.playing !== incomingPlaying) {
+      if (_pollCount >= 1 && state.playing !== incomingPlaying) {
         state.playing = incomingPlaying;
         updatePlayIcon();
       }
@@ -671,9 +757,13 @@
     if (res?.error === 'not_authenticated') {
       showToast('Oturumunuz dolmuş. Tekrar giriş yapın.', 'warning');
       state.isLoggedIn = false;
+      state.playing = false;
+      updatePlayIcon();
       updateAuthUI();
     } else if (!res?.playing) {
       showToast('Bu şarkı şu anda çalınamıyor, başka bir şarkı deneyin.', 'error');
+      state.playing = false;
+      updatePlayIcon();
     }
 
     // Queue management — şarkıyı queue'ya ekle (yoksa)
@@ -687,6 +777,14 @@
 
     // Discord Rich Presence — şarkı bilgileri metadata gelince güncellenecek
     setDiscordActivity(song.title, song.artist, song.thumbnail);
+
+    // Media session metadata güncelle
+    updateMediaSessionMetadata();
+
+    // Lyrics panel açıksa şarkı sözlerini yenile
+    if (state.panelOpen === 'lyrics') {
+      loadLyrics();
+    }
   }
 
   // Metadata IPC'den geldiğinde otomatik çağrılır.
@@ -753,9 +851,17 @@
 
   function nextSong() {
     if (!state.queue.length) return;
-    state.queueIndex = state.shuffle
-      ? Math.floor(Math.random() * state.queue.length)
-      : (state.queueIndex + 1) % state.queue.length;
+    if (state.shuffle) {
+      if (state.queue.length > 1) {
+        let r: number;
+        do { r = Math.floor(Math.random() * state.queue.length); } while (r === state.queueIndex);
+        state.queueIndex = r;
+      } else {
+        state.queueIndex = 0;
+      }
+    } else {
+      state.queueIndex = (state.queueIndex + 1) % state.queue.length;
+    }
     playSong(state.queue[state.queueIndex]);
   }
 
@@ -772,6 +878,7 @@
   function toggleShuffle() {
     state.shuffle = !state.shuffle;
     $('#btnShuffle').classList.toggle('active', state.shuffle);
+    api.store.set('shuffle', state.shuffle);
   }
 
   function toggleRepeat() {
@@ -779,6 +886,7 @@
     state.repeat = modes[(modes.indexOf(state.repeat) + 1) % 3];
     const btn = $('#btnRepeat');
     btn.classList.toggle('active', state.repeat !== 'off');
+    api.store.set('repeat', state.repeat);
     if (state.repeat === 'one') {
       btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="14" text-anchor="middle" font-size="7" fill="currentColor" stroke="none" font-weight="bold">1</text></svg>';
     } else {
@@ -885,7 +993,7 @@ function updatePlayIcon() {
     const lyrics = await ytLyrics(state.currentSong.id);
     if (lyrics) {
       body.innerHTML = lyrics.split('\n').map((line: string) =>
-        `<div class="lyric-line">${line || '&nbsp;'}</div>`
+        `<div class="lyric-line">${line ? escapeHtml(line) : '&nbsp;'}</div>`
       ).join('');
     } else {
       body.innerHTML = '<div class="empty-state"><p class="empty-text">Şarkı sözleri bulunamadı</p></div>';
@@ -900,10 +1008,10 @@ function updatePlayIcon() {
     }
     body.innerHTML = `<div class="song-list">${state.queue.map((s, i) => `
       <div class="queue-item${i === state.queueIndex ? ' playing' : ''}" data-idx="${i}">
-        <img class="song-thumb" src="${s.thumbnail}" alt="" style="width:36px;height:36px" onerror="this.style.display='none'">
+        <img class="song-thumb" src="${escapeHtml(s.thumbnail)}" alt="" style="width:36px;height:36px" onerror="this.style.display='none'">
         <div class="song-meta">
-          <div class="song-title">${s.title}</div>
-          <div class="song-artist">${s.artist}</div>
+          <div class="song-title">${escapeHtml(s.title)}</div>
+          <div class="song-artist">${escapeHtml(s.artist)}</div>
         </div>
         <span class="song-dur">${formatTime(s.duration)}</span>
       </div>`).join('')}</div>`;
@@ -918,17 +1026,15 @@ function updatePlayIcon() {
     });
   }
 
-  function addToQueue(song: Song) {
-    state.queue.push(song as QueueItem);
-  }
-
   // ── Home ───────────────────────────────────
   async function loadHome() {
+    const gen = state.navGeneration;
     const container = $('#homeContent');
     container.innerHTML = '<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>';
 
     try {
     const data = await ytHome();
+    if (gen !== state.navGeneration) return; // stale, discard
     console.log('[Harmonic] Home data:', JSON.stringify({ itemCount: data?.items?.length }));
     console.log('[Harmonic] Home first item:', data?.items?.[0] ? JSON.stringify(data.items[0]) : 'null');
 
@@ -1011,6 +1117,7 @@ function updatePlayIcon() {
 
   // ── Library ────────────────────────────────
   async function loadLibrary() {
+    const gen = state.navGeneration;
     const container = $('#libraryContent');
     container.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
 
@@ -1031,6 +1138,8 @@ function updatePlayIcon() {
         ]);
       } catch {}
     }
+
+    if (gen !== state.navGeneration) return; // stale, discard
 
     let html = '';
 
@@ -1107,6 +1216,7 @@ function updatePlayIcon() {
   }
 
   async function loadLiked() {
+    const gen = state.navGeneration;
     const container = $('#likedContent');
 
     // Yerel beğenenler
@@ -1119,6 +1229,8 @@ function updatePlayIcon() {
         ytLiked = await api.youtube.likedSongs();
       } catch {}
     }
+
+    if (gen !== state.navGeneration) return; // stale, discard
 
     let html = '';
 
@@ -1151,6 +1263,82 @@ function updatePlayIcon() {
 
     container.innerHTML = html;
     attachSongEvents(container);
+  }
+
+  // ── Media Session (OS media controls) ──────
+  function setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.setActionHandler('play', () => { if (!state.playing) togglePlay(); });
+    navigator.mediaSession.setActionHandler('pause', () => { if (state.playing) togglePlay(); });
+    navigator.mediaSession.setActionHandler('previoustrack', () => prevSong());
+    navigator.mediaSession.setActionHandler('nexttrack', () => nextSong());
+    navigator.mediaSession.setActionHandler('seekbackward', () => {
+      if (state.duration) api.player.seek(Math.max(0, state.currentTime - 10)).catch(() => {});
+    });
+    navigator.mediaSession.setActionHandler('seekforward', () => {
+      if (state.duration) api.player.seek(Math.min(state.duration, state.currentTime + 10)).catch(() => {});
+    });
+  }
+
+  function updateMediaSessionMetadata() {
+    if (!('mediaSession' in navigator) || !state.currentSong) return;
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: state.currentSong.title,
+      artist: state.currentSong.artist,
+      artwork: state.currentSong.thumbnail ? [{ src: state.currentSong.thumbnail, sizes: '480x480', type: 'image/jpeg' }] : []
+    });
+  }
+
+  // ── Keyboard Shortcuts ─────────────────────
+  function setupKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+      // Don't trigger if typing in input
+      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          if (state.duration) api.player.seek(Math.max(0, state.currentTime - 5)).catch(() => {});
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          if (state.duration) api.player.seek(Math.min(state.duration, state.currentTime + 5)).catch(() => {});
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          state.volume = Math.min(100, state.volume + 5);
+          if (state.volume > 0) state.lastVolume = state.volume;
+          ($('#volumeSlider') as HTMLInputElement).value = String(state.volume);
+          api.player.setVolume(state.volume / 100).catch(() => {});
+          api.store.set('volume', state.volume);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          state.volume = Math.max(0, state.volume - 5);
+          if (state.volume > 0) state.lastVolume = state.volume;
+          ($('#volumeSlider') as HTMLInputElement).value = String(state.volume);
+          api.player.setVolume(state.volume / 100).catch(() => {});
+          api.store.set('volume', state.volume);
+          break;
+      }
+    });
+  }
+
+  // ── Library Tabs ───────────────────────────
+  function setupLibraryTabs() {
+    const tabs = document.querySelectorAll('#libraryTabs .tab');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        state.libraryTab = (tab as HTMLElement).dataset.tab as any;
+        loadLibrary();
+      });
+    });
   }
 
   // ── Window Controls ────────────────────────
@@ -1208,16 +1396,31 @@ function updatePlayIcon() {
     const qualitySelect = $('#settingQuality') as HTMLSelectElement;
     const autoPlay = $('#settingAutoPlay') as HTMLInputElement;
 
-    api.store.get('theme').then((t: string) => { themeSelect.value = t || 'dark'; });
+    api.store.get('theme').then((t: string) => {
+      themeSelect.value = t || 'dark';
+      applyTheme(t || 'dark');
+    });
     api.store.get('quality').then((q: string) => { qualitySelect.value = q || 'high'; });
     api.store.get('autoPlay').then((v: boolean) => { autoPlay.checked = v !== false; });
 
-    themeSelect.addEventListener('change', () => api.store.set('theme', themeSelect.value));
+    themeSelect.addEventListener('change', () => {
+      api.store.set('theme', themeSelect.value);
+      applyTheme(themeSelect.value);
+    });
     qualitySelect.addEventListener('change', () => api.store.set('quality', qualitySelect.value));
     autoPlay.addEventListener('change', () => api.store.set('autoPlay', autoPlay.checked));
 
     // OAuth settings
     setupOAuthSettings();
+  }
+
+  function applyTheme(theme: string) {
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', theme);
+    }
   }
 
   async function setupOAuthSettings() {
@@ -1307,6 +1510,9 @@ function updatePlayIcon() {
     setupSettings();
     setupAuth();
     setupDiscordGateway();
+    setupKeyboardShortcuts();
+    setupMediaSession();
+    setupLibraryTabs();
 
     // Check auth state
     await checkAuthState();
@@ -1322,6 +1528,22 @@ function updatePlayIcon() {
       state.volume = savedVol <= 1 ? Math.round(savedVol * 100) : savedVol;
       const slider = $('#volumeSlider') as HTMLInputElement;
       slider.value = String(state.volume);
+    }
+
+    // Load saved shuffle/repeat
+    const savedShuffle = await api.store.get('shuffle');
+    if (savedShuffle != null) {
+      state.shuffle = !!savedShuffle;
+      $('#btnShuffle').classList.toggle('active', state.shuffle);
+    }
+    const savedRepeat = await api.store.get('repeat');
+    if (savedRepeat) {
+      state.repeat = savedRepeat as any;
+      const btn = $('#btnRepeat');
+      btn.classList.toggle('active', state.repeat !== 'off');
+      if (state.repeat === 'one') {
+        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="14" text-anchor="middle" font-size="7" fill="currentColor" stroke="none" font-weight="bold">1</text></svg>';
+      }
     }
 
     navigateTo('home');

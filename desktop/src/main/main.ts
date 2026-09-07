@@ -5,15 +5,12 @@ import { StoreManager } from './utils/store';
 import { DiscordRPC } from './utils/discord';
 import { DiscordGateway } from './utils/discord-gateway';
 import { GoogleOAuth } from './auth/google-oauth';
-import { MusicAuth, MusicUser } from './auth/music-auth';
+import { MusicAuth } from './auth/music-auth';
 import { StreamResolver } from './api/stream-resolver';
 import { autoUpdater } from 'electron-updater';
 
 // Gizli çözücü penceresinde otomatik oynatmaya izin ver (kullanıcı hareketi gerekmesin)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
-// GPU sorunlarını engelle (gizli pencere için kritik)
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-gpu-compositing');
 // Google girişi için Client Hints desteği
 app.commandLine.appendSwitch('enable-features', 'ClientHints,UserAgentClientHint');
 // Electron'un kendi gizli User Data klasörünü kullan (Chrome ile çakışmasın)
@@ -77,12 +74,28 @@ function createWindow(): void {
     try { discordRPC?.disconnect(); } catch {}
   });
 
+  mainWindow.on('maximize', () => {
+    mainWindow?.webContents.send('win:maximized', true);
+  });
+  mainWindow.on('unmaximize', () => {
+    mainWindow?.webContents.send('win:maximized', false);
+  });
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
   });
 
   buildMenu();
+
+  // Production'da F12 ve Ctrl+Shift+I dev tools'u engelle
+  if (!isDev) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
+        event.preventDefault();
+      }
+    });
+  }
 }
 
 function buildMenu(): void {
@@ -147,13 +160,6 @@ function setupIPC(): void {
   });
   ipcMain.on('win:close', () => mainWindow?.close());
   ipcMain.handle('win:isMaximized', () => mainWindow?.isMaximized() ?? false);
-
-  mainWindow?.on('maximize', () => {
-    mainWindow?.webContents.send('win:maximized', true);
-  });
-  mainWindow?.on('unmaximize', () => {
-    mainWindow?.webContents.send('win:maximized', false);
-  });
 
   // ── Renderer log köprüsü (arayüzden gelen debug mesajları) ──
   ipcMain.on('debug:log', (_, msg: string) => {
@@ -266,7 +272,11 @@ function setupIPC(): void {
   // Store
   ipcMain.handle('store:get', (_, key: string) => storeManager.get(key as any));
   ipcMain.handle('store:set', (_, key: string, value: unknown) => { storeManager.set(key as any, value); });
-  ipcMain.handle('shell:openExternal', (_, url: string) => shell.openExternal(url));
+  ipcMain.handle('shell:openExternal', (_, url: string) => {
+    if (typeof url === 'string' && url.startsWith('https://') && !url.includes('javascript:') && !url.includes('file:')) {
+      shell.openExternal(url);
+    }
+  });
 
   // ── Auth IPC ─────────────────────────────────
   ipcMain.handle('auth:loginGoogle', async () => {
@@ -366,8 +376,7 @@ function setupIPC(): void {
 
   // ── Auto-update ─────────────────────────────
   ipcMain.handle('auto:checkForUpdates', () => {
-    autoUpdater.checkForUpdatesAndNotify();
-    return { status: 'checking' };
+    return { status: 'already_checking' };
   });
 
   ipcMain.handle('auto:getUpdateStatus', () => {

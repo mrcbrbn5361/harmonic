@@ -12,6 +12,7 @@ import CDP from 'chrome-remote-interface';
 // aynı session'ı kullanır.
 
 export const MUSIC_PARTITION = 'persist:harmonic';
+const CHROME_DEBUG_PORT = 9333; // Unique port to avoid conflicts with existing Chrome
 
 // Google, UA'sında "Electron" geçen pencerelerden girişi reddediyor
 // ("Bir sorun oluştu" hatası). Gerçek Chrome kimliği kullanıyoruz.
@@ -83,9 +84,10 @@ export class MusicAuth {
 
   async isAuthenticated(): Promise<boolean> {
     const cookies = await this.getCookies();
-    // LOGIN_INFO: giriş bayrağı, SAPISID: oturum bütünlüğü
-    return cookies.some((c) => c.name === 'LOGIN_INFO' && !c.value.includes('TAKEN_BY')) ||
-           cookies.some((c) => c.name === 'SAPISID');
+    const now = Date.now() / 1000;
+    // LOGIN_INFO: giriş bayrağı, SAPISID: oturum bütünlüğü — expired olanları sayma
+    return cookies.some((c) => c.name === 'LOGIN_INFO' && !c.value.includes('TAKEN_BY') && (!c.expirationDate || c.expirationDate > now)) ||
+           cookies.some((c) => c.name === 'SAPISID' && (!c.expirationDate || c.expirationDate > now));
   }
 
   getUser(): MusicUser | null {
@@ -171,9 +173,9 @@ export class MusicAuth {
   //    (kullanıcının ana Chrome'una dokunmaz, giriş yapması gerekir)
   // 2) "Girişi Aktar" — CDP üzerinden cookie'leri çekip Electron session'a yazar
   async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean }> {
-    // Önce Chrome zaten 9222'de mi çalışıyor diye bak
+    // Önce Chrome zaten port'ta mı çalışıyor diye bak
     try {
-      const v1: any = await CDP.Version({ host: '127.0.0.1', port: 9222 });
+      const v1: any = await CDP.Version({ host: '127.0.0.1', port: CHROME_DEBUG_PORT });
       if (v1) return { opened: true, alreadyRunning: true };
     } catch {}
 
@@ -197,7 +199,7 @@ export class MusicAuth {
 
     try {
       const child = spawn(chromePath, [
-        '--remote-debugging-port=9222',
+        `--remote-debugging-port=${CHROME_DEBUG_PORT}`,
         '--remote-allow-origins=*',
         `--user-data-dir=${tmpProfile}`,
         '--no-first-run',
@@ -216,18 +218,18 @@ export class MusicAuth {
     for (let i = 0; i < 16; i++) {
       await new Promise((r) => setTimeout(r, 500));
       try {
-        const v: any = await CDP.Version({ host: '127.0.0.1', port: 9222 });
+        const v: any = await CDP.Version({ host: '127.0.0.1', port: CHROME_DEBUG_PORT });
         if (v) return { opened: true };
       } catch {}
     }
-    return { opened: false, error: 'Chrome başlatıldı ama debug portu (9222) açılmadı. Chrome\'u kapatıp tekrar deneyin.' };
+    return { opened: false, error: 'Chrome başlatıldı ama debug portu açılmadı. Chrome\'u kapatıp tekrar deneyin.' };
   }
 
   // CDP üzerinden Chrome'dan cookie'leri çek, Electron session'a aktar
   async importFromChrome(): Promise<{ success: boolean; cookies: number; error?: string }> {
     let client: any;
     try {
-      client = await CDP({ host: '127.0.0.1', port: 9222 });
+      client = await CDP({ host: '127.0.0.1', port: CHROME_DEBUG_PORT });
     } catch (e: any) {
       return { success: false, cookies: 0, error: 'Chrome\'a bağlanılamadı. Chrome\'u kapatıp tekrar "Giriş Yap" düğmesine basın.' };
     }
