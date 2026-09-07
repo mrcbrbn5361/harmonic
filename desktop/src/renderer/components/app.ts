@@ -14,9 +14,17 @@
     artistId: string;
     thumbnail: string;
     duration: number;
+    album?: string;
+    durationText?: string;
   }
 
   interface QueueItem extends Song {}
+
+  interface QueueContext {
+    name: string;
+    type: 'playlist' | 'album' | 'search' | 'home' | 'auto';
+    songs: QueueItem[];
+  }
 
   // ── State ──────────────────────────────────
   const state = {
@@ -24,8 +32,14 @@
     currentSong: null as QueueItem | null,
     queue: [] as QueueItem[],
     queueIndex: -1,
+    userQueue: [] as QueueItem[],
+    contextQueue: [] as QueueItem[],
+    contextName: '',
+    contextType: 'home' as 'playlist' | 'album' | 'search' | 'home' | 'auto',
+    history: [] as QueueItem[],
     playing: false,
     shuffle: false,
+    shuffleOrder: [] as number[],
     repeat: 'off' as 'off' | 'all' | 'one',
     volume: 80,
     lastVolume: 80,
@@ -106,10 +120,48 @@
   }
 
   function formatTime(sec: number): string {
-    if (!sec || isNaN(sec)) return '0:00';
+    if (!sec || isNaN(sec)) return '--:--';
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  function FisherYatesShuffle(arr: number[]): number[] {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function rebuildMergedQueue(): QueueItem[] {
+    return [...state.userQueue, ...state.contextQueue];
+  }
+
+  function addToQueue(song: Song): void {
+    state.userQueue.push(song as QueueItem);
+    state.queue = rebuildMergedQueue();
+    showToast(`Sıraya eklendi: ${song.title}`, 'success');
+  }
+
+  function playNext(song: Song): void {
+    state.userQueue.unshift(song as QueueItem);
+    state.queue = rebuildMergedQueue();
+    showToast(`Önce çalınacak: ${song.title}`, 'success');
+  }
+
+  function clearUserQueue(): void {
+    state.userQueue = [];
+    state.queue = rebuildMergedQueue();
+    showToast('Sıra temizlendi', 'info');
+  }
+
+  function setContext(songs: Song[], name: string, type: QueueContext['type']): void {
+    state.contextQueue = songs as QueueItem[];
+    state.contextName = name;
+    state.contextType = type;
+    state.queue = rebuildMergedQueue();
   }
 
   function show(el: HTMLElement) { el.classList.add('open', 'visible'); }
@@ -523,13 +575,14 @@
   function songRow(song: Song, num?: number): string {
     const isPlaying = state.currentSong?.id === song.id;
     const isLiked = state.liked.has(song.id);
+    const subtitle = song.album ? `${escapeHtml(song.artist)} · ${escapeHtml(song.album)}` : escapeHtml(song.artist);
     return `
       <div class="song-row${isPlaying ? ' playing' : ''}" data-id="${escapeHtml(song.id)}">
         ${num != null ? `<span class="song-num">${num}</span>` : ''}
         <img class="song-thumb" src="${escapeHtml(song.thumbnail)}" alt="" loading="lazy" onerror="this.style.display='none'">
         <div class="song-meta">
           <div class="song-title">${escapeHtml(song.title)}</div>
-          <div class="song-artist">${escapeHtml(song.artist)}</div>
+          <div class="song-artist">${subtitle}</div>
         </div>
         <span class="song-dur">${formatTime(song.duration)}</span>
         <div class="song-actions">
@@ -547,22 +600,22 @@
         const id = (row as HTMLElement).dataset.id;
         const song = findSong(id);
         if (song) {
-          // Container içindeki tüm şarkıları queue olarak ayarla
+          // Container içindeki tüm şarkıları context olarak ayarla
           const allRows = container.querySelectorAll('.song-row[data-id]');
-          const queueSongs: QueueItem[] = [];
+          const contextSongs: QueueItem[] = [];
           let clickedIdx = 0;
-          allRows.forEach((r, i) => {
+          allRows.forEach((r) => {
             const s = findSong((r as HTMLElement).dataset.id);
             if (s) {
-              if (s.id === id) clickedIdx = queueSongs.length;
-              queueSongs.push(s as QueueItem);
+              if (s.id === id) clickedIdx = contextSongs.length;
+              contextSongs.push(s as QueueItem);
             }
           });
-          if (queueSongs.length) {
-            state.queue = queueSongs;
+          if (contextSongs.length) {
+            setContext(contextSongs, '', 'home');
             state.queueIndex = clickedIdx;
           } else {
-            state.queue = [song as QueueItem];
+            setContext([song as QueueItem], '', 'home');
             state.queueIndex = 0;
           }
           playSong(song);
@@ -686,17 +739,15 @@
       if (u.title) $('#playerTitle').textContent = u.title;
       if (u.artist) $('#playerArtist').textContent = u.artist;
       if (u.thumbnail) $('#playerThumb').style.backgroundImage = `url(${u.thumbnail})`;
-      // Süreler - paused iken güncellemeyi durdur
-      if (!state.paused) {
-        state.currentTime = u.currentTime || 0;
-        state.duration = u.duration || 0;
-        if (state.duration) {
-          const pct = (state.currentTime / state.duration) * 100;
-          $('#scrubberFill').style.width = `${pct}%`;
-          $('#scrubberThumb').style.left = `${pct}%`;
-          $('#timeNow').textContent = formatTime(state.currentTime);
-          $('#timeEnd').textContent = formatTime(state.duration);
-        }
+      // Süreler — paused iken bile ilk yükleme yapılsın
+      if (u.currentTime != null) state.currentTime = u.currentTime || 0;
+      if (u.duration != null) state.duration = u.duration || 0;
+      if (state.duration) {
+        const pct = (state.currentTime / state.duration) * 100;
+        $('#scrubberFill').style.width = `${pct}%`;
+        $('#scrubberThumb').style.left = `${pct}%`;
+        $('#timeNow').textContent = formatTime(state.currentTime);
+        $('#timeEnd').textContent = formatTime(state.duration);
       }
       // Play/pause state — debounce: 1 üst üste aynı state gelmeden değiştirme
       const incomingPlaying = !u.paused && !u.isAd;
@@ -715,15 +766,20 @@
       if (!state.playing) {
         if (lastDiscordKey) clearDiscordTrack();
       } else if (u.title && u.artist && trackKey) {
-        updateDiscordForTrack(trackKey, u.title, u.artist, u.thumbnail);
+        updateDiscordForTrack(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
       }
     });
   }
 
   async function playSong(song: Song) {
     dlog('playSong çağrıldı:', song.id, song.title);
+
+    // History'ye ekle (max 50)
+    if (state.currentSong && state.currentSong.id !== song.id) {
+      state.history = [state.currentSong, ...state.history.filter((s) => s.id !== song.id)].slice(0, 50);
+    }
+
     state.currentSong = song as QueueItem;
-    // Yeni parça: konum/süre sıfırla (Discord timer'ı da buradan beslenir)
     state.currentTime = 0;
     state.duration = song.duration || 0;
 
@@ -749,7 +805,6 @@
 
     // IPC ile gizli pencerede oynat
     dlog('IPC player.play:', song.id);
-    // İyimser: IPC beklemeden ikonu hemen "oynuyor" yap
     state.playing = true;
     updatePlayIcon();
     const res: any = await ytPlayer(song.id);
@@ -766,16 +821,13 @@
       updatePlayIcon();
     }
 
-    // Queue management — şarkıyı queue'ya ekle (yoksa)
+    // Queue index güncelle
     const idx = state.queue.findIndex((s) => s.id === song.id);
     if (idx !== -1) {
       state.queueIndex = idx;
-    } else {
-      state.queue.push(song as QueueItem);
-      state.queueIndex = state.queue.length - 1;
     }
 
-    // Discord Rich Presence — şarkı bilgileri metadata gelince güncellenecek
+    // Discord Rich Presence
     setDiscordActivity(song.title, song.artist, song.thumbnail);
 
     // Media session metadata güncelle
@@ -791,7 +843,7 @@
   // Aynı parça için tekrar çağrılmaz (timer sıfırlanmaz); pause/resume'da
   // konum senkronu korunur: startTimestamp = şimdi - konum.
   let lastDiscordKey = '';
-  function updateDiscordForTrack(key: string, title: string, artist: string, coverUrl?: string) {
+  function updateDiscordForTrack(key: string, title: string, artist: string, coverUrl?: string, album?: string) {
     if (!key || !title) return;
     if (key === lastDiscordKey) return;
     lastDiscordKey = key;
@@ -804,6 +856,7 @@
     };
     if (state.duration > 0) payload.endTimestamp = start + Math.round(state.duration * 1000);
     if (coverUrl) payload.coverUrl = coverUrl;
+    if (album) payload.largeImageText = album;
     // YouTube Music'te Aç butonu
     if (key && key.length === 11) {
       (payload as any).buttons = [{ label: "YouTube Music'te Aç", url: `https://music.youtube.com/watch?v=${key}` }];
@@ -851,16 +904,43 @@
 
   function nextSong() {
     if (!state.queue.length) return;
+
+    // Repeat: one → mevcut şarkıyı başa sar
+    if (state.repeat === 'one') {
+      playSong(state.queue[state.queueIndex >= 0 ? state.queueIndex : 0]);
+      return;
+    }
+
     if (state.shuffle) {
-      if (state.queue.length > 1) {
-        let r: number;
-        do { r = Math.floor(Math.random() * state.queue.length); } while (r === state.queueIndex);
-        state.queueIndex = r;
+      // Fisher-Yates shuffle order kullan
+      if (state.shuffleOrder.length === 0) {
+        state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
+      }
+      const currentShufflePos = state.shuffleOrder.indexOf(state.queueIndex);
+      const nextShufflePos = currentShufflePos + 1;
+      if (nextShufflePos < state.shuffleOrder.length) {
+        state.queueIndex = state.shuffleOrder[nextShufflePos];
+      } else if (state.repeat === 'all') {
+        state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
+        state.queueIndex = state.shuffleOrder[0];
       } else {
-        state.queueIndex = 0;
+        // Sıra bitti, auto-play dene
+        state.playing = false;
+        updatePlayIcon();
+        return;
       }
     } else {
-      state.queueIndex = (state.queueIndex + 1) % state.queue.length;
+      state.queueIndex = state.queueIndex + 1;
+      if (state.queueIndex >= state.queue.length) {
+        if (state.repeat === 'all') {
+          state.queueIndex = 0;
+        } else {
+          // Sıra bitti, auto-play dene
+          state.playing = false;
+          updatePlayIcon();
+          return;
+        }
+      }
     }
     playSong(state.queue[state.queueIndex]);
   }
@@ -877,6 +957,11 @@
 
   function toggleShuffle() {
     state.shuffle = !state.shuffle;
+    if (state.shuffle) {
+      state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
+    } else {
+      state.shuffleOrder = [];
+    }
     $('#btnShuffle').classList.toggle('active', state.shuffle);
     api.store.set('shuffle', state.shuffle);
   }
@@ -1002,25 +1087,85 @@ function updatePlayIcon() {
 
   function renderQueue() {
     const body = $('#queueBody');
-    if (!state.queue.length) {
+    if (!state.userQueue.length && !state.contextQueue.length) {
       body.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Sıra boş</p></div>';
       return;
     }
-    body.innerHTML = `<div class="song-list">${state.queue.map((s, i) => `
-      <div class="queue-item${i === state.queueIndex ? ' playing' : ''}" data-idx="${i}">
-        <img class="song-thumb" src="${escapeHtml(s.thumbnail)}" alt="" style="width:36px;height:36px" onerror="this.style.display='none'">
-        <div class="song-meta">
-          <div class="song-title">${escapeHtml(s.title)}</div>
-          <div class="song-artist">${escapeHtml(s.artist)}</div>
-        </div>
-        <span class="song-dur">${formatTime(s.duration)}</span>
-      </div>`).join('')}</div>`;
 
+    let html = '';
+
+    // Kullanıcının ekledikleri
+    if (state.userQueue.length) {
+      html += `<div style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h4 style="font-size:13px;font-weight:600;color:var(--c-text-2)">Sıradaki Şarkılar</h4>
+          <button class="icon-btn" id="clearUserQueue" style="font-size:11px;padding:4px 8px;background:var(--c-bg-3);border-radius:4px;color:var(--c-text-2);border:none;cursor:pointer">Temizle</button>
+        </div>
+        <div class="song-list">${state.userQueue.map((s, i) => `
+          <div class="queue-item" data-type="user" data-idx="${i}">
+            <img class="song-thumb" src="${escapeHtml(s.thumbnail)}" alt="" style="width:36px;height:36px" onerror="this.style.display='none'">
+            <div class="song-meta">
+              <div class="song-title">${escapeHtml(s.title)}</div>
+              <div class="song-artist">${escapeHtml(s.artist)}</div>
+            </div>
+            <span class="song-dur">${formatTime(s.duration)}</span>
+          </div>`).join('')}</div>
+      </div>`;
+    }
+
+    // Bağlam şarkıları (çalma listesi/albumden gelen)
+    if (state.contextQueue.length) {
+      const contextLabel = state.contextName || 'Bağlam';
+      const currentCtxIdx = state.contextQueue.findIndex((s) => s.id === state.currentSong?.id);
+      const upcomingCtx = currentCtxIdx >= 0 ? state.contextQueue.slice(currentCtxIdx + 1) : state.contextQueue;
+      if (upcomingCtx.length) {
+        html += `<div>
+          <h4 style="font-size:13px;font-weight:600;color:var(--c-text-2);margin-bottom:8px">${escapeHtml(contextLabel)}</h4>
+          <div class="song-list">${upcomingCtx.map((s, i) => `
+            <div class="queue-item" data-type="context" data-idx="${i}">
+              <img class="song-thumb" src="${escapeHtml(s.thumbnail)}" alt="" style="width:36px;height:36px" onerror="this.style.display='none'">
+              <div class="song-meta">
+                <div class="song-title">${escapeHtml(s.title)}</div>
+                <div class="song-artist">${escapeHtml(s.artist)}</div>
+              </div>
+              <span class="song-dur">${formatTime(s.duration)}</span>
+            </div>`).join('')}</div>
+        </div>`;
+      }
+    }
+
+    body.innerHTML = html || '<div class="empty-state"><p class="empty-hint-text">Sıra boş</p></div>';
+
+    // Clear user queue
+    const clearBtn = body.querySelector('#clearUserQueue');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', () => {
+        clearUserQueue();
+        renderQueue();
+      });
+    }
+
+    // Queue item click
     body.querySelectorAll('.queue-item').forEach((item) => {
       item.addEventListener('click', () => {
+        const type = (item as HTMLElement).dataset.type;
         const idx = parseInt((item as HTMLElement).dataset.idx!);
-        state.queueIndex = idx;
-        playSong(state.queue[idx]);
+        if (type === 'user') {
+          const song = state.userQueue[idx];
+          if (song) {
+            // Kullanıcı queue'sundan seçildi → userQueue'dan kaldır, context'e ekle
+            state.userQueue.splice(idx, 1);
+            state.queue = rebuildMergedQueue();
+            state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
+            playSong(song);
+          }
+        } else if (type === 'context') {
+          const song = state.contextQueue[idx];
+          if (song) {
+            state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
+            playSong(song);
+          }
+        }
         renderQueue();
       });
     });
@@ -1073,7 +1218,7 @@ function updatePlayIcon() {
 
     // Set queue from songs — sadece şarkı çalmıyorsa VE kuyruk boşsa queue'yu güncelle
     if (songs.length && !state.currentSong && !state.queue.length) {
-      state.queue = songs.slice(0, 20) as QueueItem[];
+      setContext(songs.slice(0, 30), 'Önerilen Şarkılar', 'home');
     }
 
     attachSongEvents(container);
@@ -1101,7 +1246,7 @@ function updatePlayIcon() {
               attachSongEvents(songListContainer);
               
               // Queue'yu güncelle
-              state.queue = browseSongs as QueueItem[];
+              setContext(browseSongs, browseData.title || 'Şarkılar', 'playlist');
             }
           }
         } catch (err) {
@@ -1206,7 +1351,8 @@ function updatePlayIcon() {
           if (browseData.items?.length) {
             const songs = browseData.items.filter((i: any) => i.id) as Song[];
             if (songs.length) {
-              state.queue = songs as QueueItem[];
+              setContext(songs, browseData.title || 'Kütüphane', 'playlist');
+              state.queueIndex = 0;
               playSong(songs[0]);
             }
           }
@@ -1313,6 +1459,7 @@ function updatePlayIcon() {
           state.volume = Math.min(100, state.volume + 5);
           if (state.volume > 0) state.lastVolume = state.volume;
           ($('#volumeSlider') as HTMLInputElement).value = String(state.volume);
+          ($('#volumeSlider') as HTMLInputElement).style.setProperty('--vol-pct', `${state.volume}%`);
           api.player.setVolume(state.volume / 100).catch(() => {});
           api.store.set('volume', state.volume);
           break;
@@ -1321,6 +1468,7 @@ function updatePlayIcon() {
           state.volume = Math.max(0, state.volume - 5);
           if (state.volume > 0) state.lastVolume = state.volume;
           ($('#volumeSlider') as HTMLInputElement).value = String(state.volume);
+          ($('#volumeSlider') as HTMLInputElement).style.setProperty('--vol-pct', `${state.volume}%`);
           api.player.setVolume(state.volume / 100).catch(() => {});
           api.store.set('volume', state.volume);
           break;

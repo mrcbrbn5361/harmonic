@@ -164,17 +164,15 @@ export class YouTubeAPI {
     const title = this.text(col0);
     let artist = this.text(col1);
     let duration = 0;
+    let album = this.text(col2);
 
     // fixedColumns'dan süre oku (browse response'da süre burada: "2:39")
     if (r.fixedColumns?.length) {
       for (const fc of r.fixedColumns) {
         const fText = fc.musicResponsiveListItemFixedColumnRenderer?.text;
         const fStr = this.text(fText);
-        const durMatch = fStr.match(/^(\d+):(\d{2})$/);
-        if (durMatch) {
-          duration = parseInt(durMatch[1]) * 60 + parseInt(durMatch[2]);
-          break;
-        }
+        duration = this.duration(fStr);
+        if (duration > 0) break;
       }
     }
 
@@ -183,18 +181,17 @@ export class YouTubeAPI {
       const parts = artist.split('•').map((p: string) => p.trim());
       if (parts.length >= 2) {
         const lastPart = parts[parts.length - 1];
-        const durationMatch = lastPart.match(/^(\d+):(\d{2})$/);
-        if (durationMatch) {
-          duration = parseInt(durationMatch[1]) * 60 + parseInt(durationMatch[2]);
+        const durResult = this.duration(lastPart);
+        if (durResult > 0) {
+          duration = durResult;
           artist = parts[0];
+          if (parts.length >= 3) album = parts[1];
         } else {
           artist = parts[0];
+          if (parts.length >= 2) album = parts[1];
         }
       }
     }
-
-    // col2'den albüm bilgisi (browse'da album col[2]'de)
-    const album = this.text(col2);
 
     return {
       id: videoId,
@@ -218,18 +215,37 @@ export class YouTubeAPI {
 
     if (nav?.watchEndpoint?.videoId) {
       let duration = 0;
-      // Subtitle'dan süre çıkarmayı dene: "Sanatçı • 3:01" veya "Sanatçı • Album • 3:01"
+      let album = '';
+      // Subtitle'dan süre ve albüm ayrıştır: "Sanatçı • Album • 3:01" veya "Sanatçı • 3:01"
       const parts = subtitle.split('•').map((p: string) => p.trim());
       if (parts.length >= 2) {
         const lastPart = parts[parts.length - 1];
         const durMatch = lastPart.match(/^(\d+):(\d{2})$/);
         if (durMatch) {
           duration = parseInt(durMatch[1]) * 60 + parseInt(durMatch[2]);
+          // Albüm: süre hariç son eleman (eğer 3+ parça varsa)
+          if (parts.length >= 3) {
+            album = parts[parts.length - 2];
+          }
+        } else {
+          // Süre bulunamadı ama 2+ parça var → ortadaki albüm olabilir
+          if (parts.length >= 3) {
+            album = parts[parts.length - 2];
+          }
         }
       }
       // shortBylineText'den artistId
       const artistId = r.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '';
-      return { id: nav.watchEndpoint.videoId, title, artist: subtitle.split('•')[0]?.trim() || subtitle, artistId, thumbnail: thumb, duration };
+      const artist = parts[0] || subtitle;
+      return {
+        id: nav.watchEndpoint.videoId,
+        title,
+        artist,
+        artistId,
+        thumbnail: thumb,
+        duration,
+        ...(album ? { album } : {})
+      };
     }
     if (nav?.browseEndpoint) {
       const bid = nav.browseEndpoint.browseId;
