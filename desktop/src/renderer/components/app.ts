@@ -794,7 +794,11 @@
       if (!state.playing) {
         if (lastDiscordKey) clearDiscordTrack();
       } else if (u.title && u.artist && trackKey) {
-        updateDiscordForTrack(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
+        if (trackKey !== lastDiscordKey) {
+          updateDiscordForTrack(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
+        } else {
+          maybeRefreshDiscord(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
+        }
       }
     });
   }
@@ -871,10 +875,17 @@
   // Aynı parça için tekrar çağrılmaz (timer sıfırlanmaz); pause/resume'da
   // konum senkronu korunur: startTimestamp = şimdi - konum.
   let lastDiscordKey = '';
-  function updateDiscordForTrack(key: string, title: string, artist: string, coverUrl?: string, album?: string) {
+  let lastDiscordSentAt = 0;
+  const DISCORD_REFRESH_MS = 30000;
+  function updateDiscordForTrack(key: string, title: string, artist: string, coverUrl?: string, album?: string, force = false) {
     if (!key || !title) return;
-    if (key === lastDiscordKey) return;
+    const now = Date.now();
+    if (key === lastDiscordKey && !force) {
+      // Aynı parça: 30sn'de bir progress tazele (rate limit: 5/dk altında)
+      if (now - lastDiscordSentAt < DISCORD_REFRESH_MS) return;
+    }
     lastDiscordKey = key;
+    lastDiscordSentAt = now;
     const posMs = Math.max(0, Math.round((state.currentTime || 0) * 1000));
     const start = Date.now() - posMs;
     const payload: Record<string, unknown> = {
@@ -894,7 +905,15 @@
 
   function clearDiscordTrack() {
     lastDiscordKey = '';
+    lastDiscordSentAt = 0;
     api.discord.clearActivity().catch(() => {});
+  }
+
+  function maybeRefreshDiscord(key: string, title: string, artist: string, coverUrl?: string, album?: string) {
+    if (!key || key !== lastDiscordKey || !state.playing) return;
+    if (Date.now() - lastDiscordSentAt >= DISCORD_REFRESH_MS) {
+      updateDiscordForTrack(key, title, artist, coverUrl, album, true);
+    }
   }
 
   function setDiscordActivity(title: string, artist: string, coverUrl?: string) {

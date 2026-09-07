@@ -133,11 +133,26 @@ export class DiscordGateway {
   private coverCache = new Map<string, string>(); // url → mp:external/...
   private buttons: Array<{ label: string; url: string }> = [];
   private connectTimeout: NodeJS.Timeout | null = null;
+  private lastActivity: ActivityPayload | null = null;
+  private onAuthFail: (() => void) | null = null;
 
 
 
   setButtons(buttons: Array<{ label: string; url: string }>): void {
-    this.buttons = buttons;
+    this.buttons = this.sanitizeButtons(buttons);
+  }
+
+  onAuthFailure(cb: () => void): void {
+    this.onAuthFail = cb;
+  }
+
+  private sanitizeButtons(buttons?: Array<{ label: string; url: string }>): Array<{ label: string; url: string }> {
+    if (!buttons || !buttons.length) return [];
+    return buttons
+      .filter((b) => b && typeof b.label === 'string' && typeof b.url === 'string'
+        && b.label.length > 0 && b.label.length <= 32
+        && b.url.startsWith('https://'))
+      .slice(0, 2);
   }
 
   async connect(token: string, appId: string): Promise<boolean> {
@@ -198,6 +213,15 @@ export class DiscordGateway {
         console.log(`[Discord GW] Bağlantı kapandı: ${code} ${String(reason)}`);
         this.isConnected = false;
         this.stopHeartbeat();
+        // 4004 = authentication failed (geçersiz token) → yeniden deneme
+        if (code === 4004) {
+          console.error('[Discord GW] Token geçersiz (4004), yeniden bağlanma durduruldu');
+          this.reconnectAttempts = this.maxReconnect;
+          this.token = '';
+          try { this.onAuthFail?.(); } catch {}
+          doResolve(false);
+          return;
+        }
         if (code !== 1000 && this.reconnectAttempts < this.maxReconnect) {
           this.reconnectAttempts++;
           const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);

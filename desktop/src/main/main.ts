@@ -413,6 +413,10 @@ app.whenReady().then(async () => {
   youtubeAPI = new YouTubeAPI();
   discordRPC = new DiscordRPC();
   discordGateway = new DiscordGateway();
+  discordGateway.onAuthFailure(() => {
+    console.error('[Discord GW] Auth failed');
+    discordGateway.disconnect();
+  });
 
   // Tek örnek kilidi — ikinci açılışta mevcut pencereyi ön plana al
   const gotLock = app.requestSingleInstanceLock();
