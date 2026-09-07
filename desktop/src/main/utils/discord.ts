@@ -31,12 +31,22 @@ export class DiscordRPC {
     try {
       this.client = new Client({ transport: 'ipc' });
 
-      this.client.on('ready', () => {
-        this.isConnected = true;
-        console.log('[Discord] Rich Presence bağlandı');
+      const connectPromise = new Promise<void>((resolve) => {
+        this.client!.on('ready', () => {
+          this.isConnected = true;
+          console.log('[Discord] Rich Presence bağlandı');
+          resolve();
+        });
       });
 
-      await this.client.login({ clientId: appId });
+      const loginPromise = this.client.login({ clientId: appId });
+
+      // 8 sn timeout — Discord çalışmıyorsa takılmasın
+      const timeoutPromise = new Promise<void>((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), 8000)
+      );
+
+      await Promise.race([Promise.all([connectPromise, loginPromise]), timeoutPromise]);
     } catch (err) {
       console.log('[Discord] Rich Presence bağlanamadı (Discord açık olabilir)');
       this.isConnected = false;
@@ -62,38 +72,35 @@ export class DiscordRPC {
     startTimestamp?: number;
     endTimestamp?: number;
     coverUrl?: string;
+    buttons?: Array<{ label: string; url: string }>;
   }): Promise<void> {
     if (!this.client || !this.isConnected) return;
 
     try {
-      // Resim anahtarları SADECE portalde yüklü asset varsa gönderilir.
-      // Geçersiz key Discord'da "?" kutusu olarak görünür.
       const payload: Record<string, unknown> = {
         details: data.details,
         state: data.state,
         instance: false
       };
-      // coverUrl varsa largeImageKey olarak dene (Discord HTTP URL'leri desteklemez,
-      // ama portalde asset varsa largeImageText olarak kapak resmini göster)
-      if (typeof data.coverUrl === 'string' && data.coverUrl) {
-        // coverUrl'i largeImageText olarak kullan (hover'da görünür)
-        payload.largeImageText = data.largeImageText || 'Harmonic';
-        // largeImageKey SADECE portal'da yüklü asset ise çalışır
-        // HTTP URL geçerliyse largeImageKey'e koyma (Discord reddeder)
-        if (!data.coverUrl.startsWith('http')) {
-          payload.largeImageKey = data.coverUrl;
-        }
-      }
+
+      // largeImageKey: sadece portal'da yüklü asset ise çalışır
       if (typeof data.largeImageKey === 'string' && data.largeImageKey && !data.largeImageKey.startsWith('http') && data.largeImageKey !== '?') {
         payload.largeImageKey = data.largeImageKey;
         payload.largeImageText = data.largeImageText || 'Harmonic';
+      } else if (typeof data.coverUrl === 'string' && data.coverUrl) {
+        // HTTP cover URL — RPC bunu desteklemez ama text olarak göster
+        payload.largeImageText = data.largeImageText || data.details || 'Harmonic';
       }
+
       if (typeof data.smallImageKey === 'string' && data.smallImageKey && !data.smallImageKey.startsWith('http')) {
         payload.smallImageKey = data.smallImageKey;
         payload.smallImageText = data.smallImageText || '';
       }
       if (typeof data.startTimestamp === 'number') payload.startTimestamp = data.startTimestamp;
       if (typeof data.endTimestamp === 'number') payload.endTimestamp = data.endTimestamp;
+      if (data.buttons && data.buttons.length > 0) {
+        payload.buttons = data.buttons.map((b) => ({ label: b.label, url: b.url }));
+      }
       this.client.setActivity(payload);
     } catch (err) {
       console.error('[Discord] Activity ayarlanamadı:', err);

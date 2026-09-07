@@ -23,6 +23,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Download button
   document.querySelectorAll('.download-btn').forEach(btn => {
     btn.addEventListener('click', e => {
+      const href = btn.getAttribute('href');
+      if (href && href.startsWith('http')) {
+        return; // GitHub releases link — let it navigate naturally
+      }
       e.preventDefault();
       const platform = btn.dataset.platform;
       const modal = document.createElement('div');

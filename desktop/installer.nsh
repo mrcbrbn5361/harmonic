@@ -1,8 +1,9 @@
 ; ============================================
 ; Harmonic - NSIS Installer Include
-; Varsayılan kurulum dizini: D:\Harmonic
+; Varsayılan kurulum dizini: %LOCALAPPDATA%\Harmonic
 ; ============================================
 
 !macro customInit
-  StrCpy $INSTDIR "D:\Harmonic"
+  ; %LOCALAPPDATA% fallback ile güvenli kurulum dizini
+  StrCpy $INSTDIR "$LOCALAPPDATA\Harmonic"
 !macroend

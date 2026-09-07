@@ -63,14 +63,14 @@ function createWindow(): void {
     mainWindow = null;
     // Gizli oynatıcı penceresi window-all-closed'ı engeller — burada kapat
     try { streamResolver?.destroy(); } catch {}
+    try { discordGateway?.disconnect(); } catch {}
     try { discordRPC?.disconnect(); } catch {}
-    // Pencere kapandıysa uygulamayı zorla kapat
     if (process.platform !== 'darwin') app.quit();
   });
 
-  // Pencere kapatılmaya çalışıldığında da temizlik yap
   mainWindow.on('close', () => {
     try { streamResolver?.destroy(); } catch {}
+    try { discordGateway?.disconnect(); } catch {}
     try { discordRPC?.disconnect(); } catch {}
   });
 
@@ -344,9 +344,17 @@ function setupIPC(): void {
   ipcMain.handle('discord:getAppId', () => discordRPC.getAppId());
   ipcMain.handle('discord:isReady', () => discordGateway.isReady() || discordRPC.isReady());
   ipcMain.handle('discord:setActivity', async (_, data) => {
+    // Renderer startTimestamp/endTimestamp → Gateway startMs/endMs
+    const gwData: any = { ...data };
+    if (data.startTimestamp != null && gwData.startMs == null) {
+      gwData.startMs = data.startTimestamp;
+    }
+    if (data.endTimestamp != null && gwData.endMs == null) {
+      gwData.endMs = data.endTimestamp;
+    }
     if (discordGateway.isReady()) {
-      await discordGateway.setActivity(data);
-    } else {
+      await discordGateway.setActivity(gwData);
+    } else if (discordRPC.isReady()) {
       await discordRPC.setActivity(data);
     }
   });
@@ -363,8 +371,9 @@ function setupIPC(): void {
     const appId = discordRPC.getAppId();
     const ok = await discordGateway.connect(token, appId);
     if (ok) {
+      // Fallback buton — şarkı değiştirilince renderer'dan gelen buttons override eder
       discordGateway.setButtons([
-        { label: 'YouTube Music\'te Aç', url: 'https://music.youtube.com' },
+        { label: "YouTube Music'te Aç", url: 'https://music.youtube.com' },
       ]);
     }
     return ok;
@@ -446,20 +455,19 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => {
-  // Tüm sesleri durdur (gizli oynatıcı dahil)
   try { streamResolver?.destroy(); } catch {}
+  try { discordGateway?.disconnect(); } catch {}
   try { discordRPC?.disconnect(); } catch {}
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   try { streamResolver?.destroy(); } catch {}
+  try { discordGateway?.disconnect(); } catch {}
   try { discordRPC?.disconnect(); } catch {}
-  // Tüm pencereleri zorla kapat
   for (const win of BrowserWindow.getAllWindows()) {
     try { win.destroy(); } catch {}
   }
-  // Zorla çık — gizli pencere engellemesin
   setTimeout(() => process.exit(0), 500);
 });
 

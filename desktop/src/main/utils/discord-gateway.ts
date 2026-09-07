@@ -150,37 +150,47 @@ export class DiscordGateway {
     this.sessionId = '';
     this.connectTimeout = null;
 
-    return new Promise((resolve) => {
+    return new Promise<boolean>((resolve) => {
+      let resolved = false;
+      const doResolve = (v: boolean) => {
+        if (resolved) return;
+        resolved = true;
+        if (this.connectTimeout) {
+          clearTimeout(this.connectTimeout);
+          this.connectTimeout = null;
+        }
+        resolve(v);
+      };
+
       try {
         this.ws = new WebSocket(GATEWAY_URL);
       } catch (e: any) {
         console.error('[Discord GW] WebSocket oluşturulamadı:', e.message);
-        resolve(false);
+        doResolve(false);
         return;
       }
 
-      // 15 sn timeout - bağlantıyı zorla kapat
       this.connectTimeout = setTimeout(() => {
-        if (!this.isConnected) {
+        if (!this.isConnected || !this.sessionId) {
           console.error('[Discord GW] Bağlantı zaman aşımı (15sn)');
           this.disconnect();
-          resolve(false);
+          doResolve(false);
         }
       }, 15000);
 
       this.ws.on('open', () => {
         console.log('[Discord GW] Bağlantı açıldı');
         this.isConnected = true;
-        if (this.connectTimeout) {
-          clearTimeout(this.connectTimeout);
-          this.connectTimeout = null;
-        }
       });
 
       this.ws.on('message', (data: Buffer | string) => {
         try {
           const msg = JSON.parse(String(data));
           this.handleMessage(msg);
+          if (this.sessionId && !resolved) {
+            console.log('[Discord GW] READY alındı, bağlantı tamam');
+            doResolve(true);
+          }
         } catch {}
       });
 
@@ -188,10 +198,6 @@ export class DiscordGateway {
         console.log(`[Discord GW] Bağlantı kapandı: ${code} ${String(reason)}`);
         this.isConnected = false;
         this.stopHeartbeat();
-        if (this.connectTimeout) {
-          clearTimeout(this.connectTimeout);
-          this.connectTimeout = null;
-        }
         if (code !== 1000 && this.reconnectAttempts < this.maxReconnect) {
           this.reconnectAttempts++;
           const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
@@ -327,14 +333,17 @@ export class DiscordGateway {
           this.coverCache.set(activity.largeImage, resolved);
           activity.largeImage = resolved;
         } else {
-          delete activity.largeImage; // çözümleme başarısız → gönderme
+          delete activity.largeImage;
         }
       }
     }
 
-    // Butonları ekle (Metrolist'teki gibi)
-    if (this.buttons.length > 0) {
-      activity.buttons = this.buttons;
+    // Renderer'dan gelen buttons kullanılır — Gateway'deki this.buttons ile overwrite ETME
+    // this.buttons sadece fallback olarak kullanılır
+    if (!activity.buttons || activity.buttons.length === 0) {
+      if (this.buttons.length > 0) {
+        activity.buttons = this.buttons;
+      }
     }
 
     const payload = buildPresencePayload([activity]);

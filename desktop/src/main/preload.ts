@@ -66,6 +66,7 @@ const api = {
       startTimestamp?: number;
       endTimestamp?: number;
       coverUrl?: string;
+      buttons?: Array<{ label: string; url: string }>;
     }) => ipcRenderer.invoke('discord:setActivity', data),
     clearActivity: () => ipcRenderer.invoke('discord:clearActivity'),
     gwConnect: (token: string) => ipcRenderer.invoke('discord:gwConnect', token),

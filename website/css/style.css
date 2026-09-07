@@ -817,6 +817,28 @@ section {
     display: none;
   }
   
+  .nav-links.active,
+  .nav-actions.active {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    top: 70px;
+    left: 0;
+    right: 0;
+    background: rgba(10, 10, 10, 0.95);
+    backdrop-filter: blur(20px);
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    gap: 12px;
+    z-index: 99;
+  }
+  
+  .nav-actions.active {
+    top: auto;
+    border-bottom: none;
+    padding-top: 0;
+  }
+  
   .mobile-menu-btn {
     display: block;
   }

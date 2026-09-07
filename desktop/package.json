@@ -56,6 +56,11 @@
         ]
       }
     ],
+    "publish": {
+      "provider": "github",
+      "owner": "mrcbrbn5361",
+      "repo": "harmonic"
+    },
     "win": {
       "target": [
         {
@@ -78,7 +83,7 @@
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
       "installerHeaderIcon": "assets/icon.ico",
-      "license": "LICENSE",
+      "license": "../LICENSE",
       "artifactName": "Harmonic-Setup-${version}-win11.${ext}",
       "include": "installer.nsh"
     }
