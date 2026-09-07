@@ -352,6 +352,12 @@ function setupIPC(): void {
     if (data.endTimestamp != null && gwData.endMs == null) {
       gwData.endMs = data.endTimestamp;
     }
+    if ((data as any).largeImageText && !gwData.largeText) {
+      gwData.largeText = (data as any).largeImageText;
+    }
+    if ((data as any).coverUrl && !gwData.largeImage) {
+      gwData.largeImage = (data as any).coverUrl;
+    }
     if (discordGateway.isReady()) {
       await discordGateway.setActivity(gwData);
     } else if (discordRPC.isReady()) {

@@ -162,6 +162,8 @@
     state.contextName = name;
     state.contextType = type;
     state.queue = rebuildMergedQueue();
+    const ctxEl = $('#playerContext');
+    if (ctxEl) ctxEl.textContent = name || '';
   }
 
   function show(el: HTMLElement) { el.classList.add('open', 'visible'); }
@@ -621,6 +623,13 @@
           playSong(song);
         }
       });
+      // Sağ tık menüsü
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const id = (row as HTMLElement).dataset.id;
+        const song = findSong(id);
+        if (song) showContextMenu(e.clientX, e.clientY, song);
+      });
     });
     container.querySelectorAll('.like-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -1071,6 +1080,83 @@ function updatePlayIcon() {
     hide($('#panelBackdrop'));
   }
 
+  // ── Context Menu ────────────────────────────
+  let activeContextMenu: HTMLElement | null = null;
+
+  function showContextMenu(x: number, y: number, song: Song) {
+    closeContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    menu.innerHTML = `
+      <div class="ctx-item" data-action="play">Şimdi Çal</div>
+      <div class="ctx-item" data-action="playNext">Önce Çal</div>
+      <div class="ctx-item" data-action="addToQueue">Sıraya Ekle</div>
+      <div class="ctx-separator"></div>
+      <div class="ctx-item" data-action="addToLiked">${state.liked.has(song.id) ? 'Beğeniyi Kaldır' : 'Beğeniye Ekle'}</div>
+      <div class="ctx-separator"></div>
+      <div class="ctx-item" data-action="copyLink">Bağlantıyı Kopyala</div>
+    `;
+
+    // Pozisyon ayarla
+    menu.style.left = `${Math.min(x, window.innerWidth - 200)}px`;
+    menu.style.top = `${Math.min(y, window.innerHeight - 250)}px`;
+
+    document.body.appendChild(menu);
+    activeContextMenu = menu;
+
+    menu.addEventListener('click', (e) => {
+      const action = (e.target as HTMLElement).dataset.action;
+      if (!action) return;
+      switch (action) {
+        case 'play':
+          // Context olarak ayarla ve çal
+          const parentList = (e.target as HTMLElement).closest('.song-list');
+          if (parentList) {
+            const allRows = parentList.querySelectorAll('.song-row[data-id]');
+            const ctxSongs: QueueItem[] = [];
+            let clickedIdx = 0;
+            allRows.forEach((r) => {
+              const s = findSong((r as HTMLElement).dataset.id);
+              if (s) {
+                if (s.id === song.id) clickedIdx = ctxSongs.length;
+                ctxSongs.push(s as QueueItem);
+              }
+            });
+            if (ctxSongs.length) setContext(ctxSongs, '', 'home');
+          }
+          state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
+          playSong(song);
+          break;
+        case 'playNext':
+          playNext(song);
+          break;
+        case 'addToQueue':
+          addToQueue(song);
+          break;
+        case 'addToLiked':
+          toggleLike(song.id);
+          break;
+        case 'copyLink':
+          navigator.clipboard?.writeText(`https://music.youtube.com/watch?v=${song.id}`);
+          showToast('Bağlantı kopyalandı', 'success');
+          break;
+      }
+      closeContextMenu();
+    });
+
+    // Dışarı tıklayınca kapat
+    setTimeout(() => {
+      document.addEventListener('click', closeContextMenu, { once: true });
+    }, 0);
+  }
+
+  function closeContextMenu() {
+    if (activeContextMenu) {
+      activeContextMenu.remove();
+      activeContextMenu = null;
+    }
+  }
+
   async function loadLyrics() {
     if (!state.currentSong) return;
     const body = $('#lyricsBody');
@@ -1471,6 +1557,22 @@ function updatePlayIcon() {
           ($('#volumeSlider') as HTMLInputElement).style.setProperty('--vol-pct', `${state.volume}%`);
           api.player.setVolume(state.volume / 100).catch(() => {});
           api.store.set('volume', state.volume);
+          break;
+        case 'KeyM':
+          e.preventDefault();
+          $('#btnVolume').click();
+          break;
+        case 'KeyS':
+          e.preventDefault();
+          toggleShuffle();
+          break;
+        case 'KeyR':
+          e.preventDefault();
+          toggleRepeat();
+          break;
+        case 'KeyF':
+          e.preventDefault();
+          api.window.maximize();
           break;
       }
     });
