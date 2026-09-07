@@ -674,6 +674,16 @@
       seekFromEvent(e);
     });
 
+    // Hover tooltip: imleçteki zaman
+    const scrubTooltip = $('#scrubberTooltip');
+    scrubber.addEventListener('mousemove', (e) => {
+      if (!state.duration) return;
+      const rect = scrubber.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      scrubTooltip.textContent = formatTime(pct * state.duration);
+      scrubTooltip.style.left = `${pct * 100}%`;
+    });
+
     scrubber.addEventListener('mousedown', (e) => {
       isDragging = true;
       seekFromEvent(e);
@@ -726,6 +736,15 @@
       updateVolumeSliderBg();
       api.player.setVolume(state.volume / 100).catch(() => {});
       api.store.set('volume', state.volume);
+    });
+    // Volume çift-tık → %50
+    volSlider.addEventListener('dblclick', () => {
+      state.volume = 50;
+      state.lastVolume = 50;
+      volSlider.value = '50';
+      updateVolumeSliderBg();
+      api.player.setVolume(0.5).catch(() => {});
+      api.store.set('volume', 50);
     });
     // state.volume 0-100 aralığında olmalı; initial setVolume
     api.player.setVolume(Math.max(0, Math.min(100, state.volume)) / 100).catch(() => {});
@@ -1534,11 +1553,17 @@ function updatePlayIcon() {
           break;
         case 'ArrowLeft':
           e.preventDefault();
-          if (state.duration) api.player.seek(Math.max(0, state.currentTime - 5)).catch(() => {});
+          if (state.duration) {
+            const step = e.shiftKey ? 10 : 5;
+            api.player.seek(Math.max(0, state.currentTime - step)).catch(() => {});
+          }
           break;
         case 'ArrowRight':
           e.preventDefault();
-          if (state.duration) api.player.seek(Math.min(state.duration, state.currentTime + 5)).catch(() => {});
+          if (state.duration) {
+            const step = e.shiftKey ? 10 : 5;
+            api.player.seek(Math.min(state.duration, state.currentTime + step)).catch(() => {});
+          }
           break;
         case 'ArrowUp':
           e.preventDefault();
@@ -1785,6 +1810,9 @@ function updatePlayIcon() {
     if (savedShuffle != null) {
       state.shuffle = !!savedShuffle;
       $('#btnShuffle').classList.toggle('active', state.shuffle);
+      if (state.shuffle && state.queue.length) {
+        state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
+      }
     }
     const savedRepeat = await api.store.get('repeat');
     if (savedRepeat) {
