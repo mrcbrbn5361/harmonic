@@ -1,0 +1,86 @@
+{
+  "name": "harmonic",
+  "version": "1.0.0",
+  "description": "Harmonic - Premium music streaming for Windows 11",
+  "main": "dist/main/main.js",
+  "author": "Harmonic Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "concurrently \"npm run dev:main\" \"npm run dev:renderer\"",
+    "dev:main": "tsc -p tsconfig.main.json && electron .",
+    "dev:renderer": "vite",
+    "build": "npm run build:main && npm run build:renderer",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build:installer": "npm run build && electron-builder --win nsis",
+    "build:win": "npm run build && electron-builder --win",
+    "build:portable": "npm run build && electron-builder --win portable",
+    "typecheck": "tsc --noEmit -p tsconfig.main.json"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.34.0",
+    "discord-rpc": "^4.0.1",
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/ws": "^8.18.1",
+    "7zip-bin": "^5.2.0",
+    "concurrently": "^8.2.2",
+    "electron": "28.3.3",
+    "electron-builder": "^24.9.1",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.12"
+  },
+  "build": {
+    "appId": "com.harmonic.desktop",
+    "productName": "Harmonic",
+    "copyright": "Copyright © 2026 Harmonic Team",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/",
+        "to": "assets/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "Harmonic-Setup-${version}-win11.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Harmonic",
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "license": "LICENSE",
+      "artifactName": "Harmonic-Setup-${version}-win11.${ext}",
+      "include": "installer.nsh"
+    }
+  }
+}

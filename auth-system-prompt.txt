@@ -1,0 +1,426 @@
+# Harmonic - Auth Sistemi Prompt'u
+# Bu dosya, Harmonic uygulamasının kimlik doğrulama sisteminin
+# tam ve eksiksiz teknik dokümantasyonudur.
+# Başka bir geliştirici bu dosyayı okuyarak sistemi anlayabilir,
+# geliştirebilir veya hatalarını düzeltebilir.
+
+============================================================
+1. GENEL YAPI
+============================================================
+
+Harmonic, iki bağımsız auth sistemi kullanır:
+
+  A) YouTube Music Cookie Tabanlı Giriş (MusicAuth)
+     - Asıl müzik dinleme deneyimi için gereklidir
+     - Chrome'dan cookie aktarımı ile çalışır
+     - Electron'un kendi partition'ında saklanır
+
+  B) Google OAuth 2.0 Girişi (GoogleOAuth)
+     - Opsiyonel, YouTube API erişimi için
+     - Client ID/Secret gerektirir
+     - Ayarlardan yapılandırılabilir
+
+  C) Discord Token Girişi (DiscordGateway)
+     - Tamamen gizli (logoya 3 tık ile açılır)
+     - Rich Presence kapak görseli için gereklidir
+     - İsteğe bağlıdır
+
+============================================================
+2. YOUTUBE MUSIC COOKIE TABANLI GİRİŞ (MusicAuth)
+============================================================
+
+Dosya: desktop/src/main/auth/music-auth.ts
+
+2.1 Akış Özeti
+--------------
+  1. Kullanıcı "Giriş Yap" butonuna basar
+  2. openChromeLogin() çağrılır:
+     - Chrome binary'si bulunur (3 farklı yol kontrol edilir)
+     - Ayrı bir profil dizini oluşturulur: %TEMP%\harmonic-chrome-profile
+     - Chrome --remote-debugging-port=9222 ile başlatılır
+     - Google ServiceLogin sayfası açılır
+     - Kullanıcı Chrome'da YouTube Music'e giriş yapar
+  3. Kullanıcı "Girişi Aktar" butonuna basar
+  4. importFromChrome() çağrılır:
+     - CDP (Chrome DevTools Protocol) üzerinden Chrome'a bağlanılır
+     - 5 farklı URL'den cookie'ler çekilir:
+       * https://music.youtube.com/
+       * https://accounts.youtube.com/
+       * https://www.youtube.com/
+       * https://youtube.com/
+       * https://accounts.google.com/
+     - Cookie'ler Electron session'a yazılır (persist:harmonic partition)
+     - Profil bilgileri API veya CDP ile alınır
+  5. Kullanıcı artık giriş yapmıştır
+
+2.2 Session Yapısı
+------------------
+  Partition: persist:harmonic
+  - Tüm cookie'ler bu partition'da saklanır
+  - Uygulama yeniden açıldığında giriş korunur
+  - StreamResolver aynı session'ı kullanır (gizli pencere)
+
+2.3 Cookie Kontrolü
+-------------------
+  isAuthenticated() fonksiyonu:
+  - LOGIN_INFO cookie'si var mı? (TAKEN_BY içermemeli)
+  - VEYA SAPISID cookie'si var mı?
+  - İkisi de yoksa → giriş yapılmamış
+
+2.4 Profil Bilgisi Alma
+------------------------
+  Üç farklı yol denenir (sırayla):
+
+  1. fetchProfileViaAPI():
+     - music.youtube.com/youtubei/v1/account/account_menu endpoint'ine
+       cookie header ile POST isteği yapılır
+     - accountName, accountPhoto, accountBylineText alanları parse edilir
+     - Regex ile ham metinde de denenir
+
+  2. fetchProfileViaCDP():
+     - Chrome'da music.youtube.com açılır
+     - JavaScript ile DOM'dan profil bilgileri çekilir
+     - ytcfg.data_ objesinden USER_NAME alınır
+     - aria-label'den avatar ismi extract edilir
+
+  3. googleUser'dan互补me:
+     - Google OAuth ile giriş yapıldıysa oradan isim/e-posta alınır
+     - sanitizeName() ile geçersiz isimler filtrelenir
+
+2.5 Geçersiz İsim Filtresi
+---------------------------
+  INVALID_NAMES regex'i:
+  /guide|hamburger|menu|account|hesap|profil|open guide|rehber|kläravuz|youtube music/i
+
+  Bu isimler YouTube Music API'sinden dönen geçersiz/tanımsız isimlerdir.
+  Eğer profil ismi bunlardan biriyse boş string döner.
+
+2.6 Client Hints Header'ları
+-----------------------------
+  Google, Electron tarayıcısını "güvenli değil" olarak reddeder.
+  Çözüm: Gerçek Chrome gibi görünmek için şu header'lar eklenir:
+
+  Sec-CH-UA: "Chromium";v="126", "Google Chrome";v="126", "Not.A/Brand";v="8"
+  Sec-CH-UA-Mobile: ?0
+  Sec-CH-UA-Platform: "Windows"
+  Accept-Language: tr-TR,tr;q=0.9,en;q=0.8
+
+  Bu header'lar onBeforeSendHeaders ile her isteğe eklenir.
+
+2.7 Chrome Binary Yolları
+---------------------------
+  1. C:\Program Files\Google\Chrome\Application\chrome.exe
+  2. C:\Program Files (x86)\Google\Chrome\Application\chrome.exe
+  3. %LOCALAPPDATA%\Google\Chrome\Application\chrome.exe
+
+2.8 CDP Bağlantı Detayları
+---------------------------
+  Host: 127.0.0.1
+  Port: 9222
+  Timeout: 8 sn (16 deneme x 500ms)
+
+  Chrome başlatma parametreleri:
+  --remote-debugging-port=9222
+  --remote-allow-origins=*
+  --user-data-dir=%TEMP%\harmonic-chrome-profile
+  --no-first-run
+  --no-default-browser-check
+
+2.9 Çıkış (Logout)
+-------------------
+  logout() fonksiyonu:
+  - cookies, localstorage, cachestorage, indexdb temizlenir
+  - musicUser store'dan silinir
+
+============================================================
+3. GOOGLE OAuth 2.0 GİRİŞİ (GoogleOAuth)
+============================================================
+
+Dosya: desktop/src/main/auth/google-opauth.ts
+
+3.1 Akış Özeti
+--------------
+  1. Kullanıcı "Hesabınızla devam et" butonuna basar
+  2. loginGoogle() çağrılır:
+     - Localhost'ta geçici HTTP sunucusu açılır
+     - Google OAuth sayfası açılır (redirect: localhost:PORT/callback)
+     - Kullanıcı Google hesabını seçer
+     - Callback URL'den authorization code alınır
+     - Code ile access_token + refresh_token alınır
+     - Kullanıcı bilgileri (id, name, email, picture) alınır
+  3. Kullanıcı giriş yapmıştır
+
+3.2 Gerekli Bilgiler
+---------------------
+  Client ID ve Secret uygulamaya gömülüdür:
+  Dosya: desktop/src/main/auth/google-credentials.ts
+
+  Ayarlardan da değiştirilebilir:
+  - auth:setGoogleConfig IPC handler'ı
+  - auth:getGoogleConfig IPC handler'ı
+
+3.3 OAuth Scope'ları
+--------------------
+  - https://www.googleapis.com/auth/youtube
+  - https://www.googleapis.com/auth/userinfo.profile
+  - https://www.googleapis.com/auth/userinfo.email
+
+3.4 Token Saklama
+-----------------
+  Token'lar electron-store ile saklanır:
+  - googleTokens: { access_token, refresh_token, expires_at, token_type, scope }
+  - googleUser: { id, name, email, picture, provider }
+
+  Token süresi dolduğunda (expires_at - 60sn) otomatik yenilenir.
+
+3.5 Çıkış (Logout)
+-------------------
+  logoutGoogle() fonksiyonu:
+  - googleTokens store'dan silinir
+  - googleUser store'dan silinir
+  - YouTube API access token null yapılır
+
+============================================================
+4. DISCORD TOKEN GİRİŞİ (DiscordGateway)
+============================================================
+
+Dosya: desktop/src/main/utils/discord-gateway.ts
+
+4.1 Akış Özeti
+--------------
+  1. Token girişi TAMAMEN gizlidir
+  2. Login sayfasında logoya 3 kez tıklayınca açılır
+  3. Kullanıcı Discord token'ını girer
+  4. gwConnect() çağrılır:
+     - Discord WebSocket API'sine bağlanılır
+     - IDENTIFY mesajı gönderilir
+     - READY event'inde connection kurulur
+  5. Artık şarkı kapağı + buton Discord'da görünür
+
+4.2 Gizlilik Mekanizması
+-------------------------
+  login.html'de token butonu visible DEĞİLDIR.
+
+  Triggers:
+  - Logoya 3 kez tıklama (1 sn içinde)
+  - logoClickCount değişkeni ile sayılır
+  - 3'e ulaşırsa switchState('TokenInput') çağrılır
+
+  Bu sayede sadece gelişmiş kullanıcılar token girebilir.
+
+4.3 Token Saklama
+-----------------
+  Token electron-store ile saklanır:
+  - discordToken: string
+
+  Token girildikten sonra uygulama her açıldığında
+  otomatik olarak Discord'a bağlanılır.
+
+4.4 Gateway Detayları
+---------------------
+  WebSocket URL: wss://gateway.discord.gg/?v=10&encoding=json
+  Heartbeat interval: READY event'inde gelen interval
+  Reconnection: 10 deneme, exponential backoff
+
+  Activity payload:
+  {
+    details: "Şarkı adı",
+    state: "Sanatçı adı",
+    largeImageKey: "kapak URL",
+    buttons: [{ label: "YouTube Music'te Aç", url: "..." }]
+  }
+
+============================================================
+5. IPC HANDLER'LAR (Main Process)
+============================================================
+
+Dosya: desktop/src/main/main.ts
+
+5.1 YouTube Music Auth IPC'leri
+--------------------------------
+  auth:openChromeLogin    → musicAuth.openChromeLogin()
+  auth:importFromChrome   → musicAuth.importFromChrome()
+  auth:logoutMusic        → musicAuth.logout()
+  auth:isMusicAuthenticated → musicAuth.isAuthenticated()
+  auth:getMusicUser       → musicAuth.getUser()
+
+5.2 Google OAuth IPC'leri
+--------------------------
+  auth:loginGoogle        → googleAuth.loginGoogle()
+  auth:logoutGoogle       → googleAuth.logoutGoogle()
+  auth:isGoogleAuthenticated → googleAuth.isGoogleAuthenticated()
+  auth:getGoogleUser      → googleAuth.getGoogleUser()
+  auth:getGoogleAccessToken → googleAuth.getGoogleAccessToken()
+  auth:setGoogleConfig    → googleAuth.setGoogleConfig()
+  auth:getGoogleConfig    → googleAuth.getGoogleConfig()
+
+5.3 Discord IPC'leri
+---------------------
+  discord:gwConnect       → discordGateway.connect()
+  discord:gwDisconnect    → discordGateway.disconnect()
+  discord:gwIsReady       → discordGateway.isReady()
+
+============================================================
+6. RENDERER (preload.ts Bridge)
+============================================================
+
+Dosya: desktop/src/main/preload.ts
+
+  api.auth.loginMusic()         → auth:openChromeLogin
+  api.auth.importFromChrome()   → auth:importFromChrome
+  api.auth.logoutMusic()        → auth:logoutMusic
+  api.auth.isMusicAuthenticated() → auth:isMusicAuthenticated
+  api.auth.getMusicUser()       → auth:getMusicUser
+
+  api.auth.loginGoogle()        → auth:loginGoogle
+  api.auth.logoutGoogle()       → auth:logoutGoogle
+  api.auth.isGoogleAuthenticated() → auth:isGoogleAuthenticated
+  api.auth.getGoogleUser()      → auth:getGoogleUser
+  api.auth.getGoogleAccessToken() → auth:getGoogleAccessToken
+  api.auth.setGoogleConfig()    → auth:setGoogleConfig
+  api.auth.getGoogleConfig()    → auth:getGoogleConfig
+
+  api.discord.gwConnect()       → discord:gwConnect
+  api.discord.gwDisconnect()    → discord:gwDisconnect
+  api.discord.gwIsReady()       → discord:gwIsReady
+
+============================================================
+7. RENDERER (app.ts - UI Akışı)
+============================================================
+
+Dosya: desktop/src/renderer/components/app.ts
+
+7.1 Başlangıç Kontrolü
+-----------------------
+  checkAuthState():
+  - api.auth.isMusicAuthenticated() çağrılır
+  - Giriş yapılmışsa → playerSection.visible, loginSection.hidden
+  - Giriş yapılmamışsa → loginPrompt.visible, playerSection.hidden
+
+7.2 Giriş Butonu Akışı
+-----------------------
+  btnAuthLogin tıklanırsa:
+  1. Toast: "Chrome açılıyor..."
+  2. api.auth.loginMusic() → Chrome açılır
+  3. showChromeImportPrompt() → Modal açılır
+  4. Kullanıcı Chrome'da giriş yapar
+  5. "Girişi Aktar" butonuna basar
+  6. api.auth.importFromChrome() → Cookie'ler aktarılır
+  7. Başarılıysa → player sayfasına yönlendirme
+
+7.3 Modal Akışı (showChromeImportPrompt)
+-----------------------------------------
+  Modal yapısı:
+  - Başlık: "Chrome'da Giriş Yapın"
+  - Adım 1: Chrome'da Google hesabınızla giriş yapın
+  - Adım 2: YouTube Music ana sayfası yüklendikten sonra "Girişi Aktar"
+  - Adım 3: Chrome penceresini kapatabilirsiniz
+
+  Butonlar:
+  - İptal → Modal kapat
+  - Girişi Aktar → importFromChrome() çağrılır
+
+  Durum gösterimi:
+  - "Chrome'un cookie'leri okunuyor..."
+  - Başarılı: "X cookie aktarıldı!"
+  - Hatalı: "Hata: ..."
+
+============================================================
+8. HATA DURUMLARI VE ÇÖZÜMLERİ
+============================================================
+
+8.1 "Chrome bulunamadı"
+  - Chrome yüklü değil
+  - Çözüm: Google Chrome yükleyin
+
+8.2 "Chrome'a bağlanılamadı"
+  - CDP portu (9222) kapalı
+  - Çözüm: Chrome'u kapatıp tekrar "Giriş Yap" deyin
+
+8.3 "Cookie bulunamadı"
+  - Chrome'da YouTube/Google'a giriş yapılmamış
+  - Çözüm: Chrome'da music.youtube.com'a giriş yapın
+
+8.4 "accountItem bulunamadı"
+  - API yanıtında profil bilgisi yok
+  - Çözüm: Otomatik olarak CDP ile denenir
+
+8.5 "Oturumunuz açılamadı"
+  - Google Client Hints eksik
+  - Çözüm: onBeforeSendHeaders ile eklenir (otomatik)
+
+8.6 "Hesap askıya alındı"
+  - Google hesabı yasaklanmış
+  - Çözüm: Farklı hesapla giriş yapın
+
+8.7 "Token geçersiz veya Discord kapalı"
+  - Discord token'ı yanlış veya Discord çalışmıyor
+  - Çözüm: Doğru token girin veya Discord'u açın
+
+============================================================
+9. VERİ YAPILARI
+============================================================
+
+9.1 MusicUser
+{
+  id: "ytmusic",
+  name: "Kullanıcı Adı",
+  email: "ornek@gmail.com",
+  picture: "https://...",
+  provider: "youtube-music"
+}
+
+9.2 UserData (Google)
+{
+  id: "google_id",
+  name: "Kullanıcı Adı",
+  email: "ornek@gmail.com",
+  picture: "https://...",
+  provider: "google"
+}
+
+9.3 OAuthTokens
+{
+  access_token: "ya29...",
+  refresh_token: "1//...",
+  expires_at: 1693000000000,
+  token_type: "Bearer",
+  scope: "https://www.googleapis.com/auth/youtube ..."
+}
+
+============================================================
+10. DOSYA SİSTEMİ YAPISI
+============================================================
+
+desktop/src/main/
+  auth/
+    google-credentials.ts    → Client ID/Secret tanımları
+    google-oauth.ts          → Google OAuth 2.0 akışı
+    music-auth.ts            → YouTube Music cookie girişi
+  utils/
+    discord.ts               → Discord RPC (basit)
+    discord-gateway.ts       → Discord Gateway (kapak destekli)
+  main.ts                    → IPC handler'lar
+  preload.ts                 → Renderer bridge
+
+desktop/src/renderer/
+  login.html                 → Giriş sayfası (token gizli)
+  components/
+    app.ts                   → Ana uygulama (auth UI akışı)
+
+============================================================
+11. GELİŞTİRİCİ NOTLARI
+============================================================
+
+- Cookie tabanlı giriş en güvenilir yöntemdir
+- Google OAuth sadece YouTube API erişimi için gereklidir
+- Discord token'ı gizlidir, sadece gelişmiş kullanıcılar erişir
+- Tüm profiller sanitizeName() ile filtrelenir
+- Cookie'ler persist:harmonic partition'ında saklanır
+- Chrome'da ayrı profil kullanılır (kullanıcının Chrome'u kilitlenmez)
+- CDP, Chrome DevTools Protocol'dür, 9222 portunda çalışır
+- Token'lar electron-store ile saklanır (harmonic-auth store adı)
+
+============================================================
+DOSYA: D:\MetrolistDesktop\auth-system-prompt.txt
+============================================================

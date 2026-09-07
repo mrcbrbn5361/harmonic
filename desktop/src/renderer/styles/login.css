@@ -1,0 +1,293 @@
+/* ============================================
+   Harmonic - Login Page Styles
+   ============================================ */
+
+:root {
+  --c-bg-0: #0a0a0a;
+  --c-bg-1: #111111;
+  --c-bg-2: #1a1a1a;
+  --c-bg-3: #222222;
+  --c-bg-hover: #2a2a2a;
+  --c-border: #252525;
+  --c-text-0: #ffffff;
+  --c-text-1: #e0e0e0;
+  --c-text-2: #a0a0a0;
+  --c-text-3: #666666;
+  --c-accent: #e8364e;
+  --c-accent-hover: #d42a40;
+  --c-success: #2ecc71;
+  --c-warning: #f39c12;
+  --c-error: #e8364e;
+  --titlebar-h: 38px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.5);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--c-text-1);
+  background: var(--c-bg-0);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+a { color: var(--c-accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button { border: none; background: none; cursor: pointer; font: inherit; color: inherit; }
+
+/* Titlebar */
+.titlebar {
+  height: var(--titlebar-h);
+  background: var(--c-bg-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+  border-bottom: 1px solid var(--c-border);
+  position: relative;
+  z-index: 100;
+}
+
+.titlebar-drag { flex: 1; height: 100%; }
+
+.titlebar-controls {
+  display: flex;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.tb-btn {
+  width: 46px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-text-3);
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.tb-btn:hover { background: var(--c-bg-3); color: var(--c-text-0); }
+.tb-close:hover { background: #c42b1c; color: white; }
+
+/* Container */
+.login-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--c-bg-0);
+}
+
+/* Content */
+.login-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  overflow-y: auto;
+}
+
+/* Logo Section */
+.logo-section {
+  text-align: center;
+  margin-bottom: 40px;
+}
+
+.logo-icon {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, var(--c-accent) 0%, #ff6b7a 100%);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  margin: 0 auto 16px;
+  box-shadow: 0 8px 32px rgba(232, 54, 78, 0.3);
+}
+
+.brand-name {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--c-text-0);
+  letter-spacing: -0.5px;
+  margin-bottom: 4px;
+}
+
+.brand-tagline {
+  font-size: 14px;
+  color: var(--c-text-3);
+}
+
+/* Login States */
+.login-state {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 100%;
+  max-width: 380px;
+}
+
+.login-state.active {
+  display: flex;
+}
+
+/* Initial State */
+.google-icon {
+  margin-bottom: 24px;
+}
+
+.login-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--c-text-0);
+  margin-bottom: 8px;
+}
+
+.login-desc {
+  font-size: 14px;
+  color: var(--c-text-2);
+  line-height: 1.5;
+  margin-bottom: 28px;
+}
+
+.btn-google {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 24px;
+  background: var(--c-text-0);
+  color: var(--c-bg-0);
+  border-radius: var(--r-lg);
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 200ms ease;
+  box-shadow: var(--shadow-lg);
+}
+
+.btn-google:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 32px rgba(255,255,255,0.15);
+}
+
+.btn-google:active {
+  transform: translateY(0);
+}
+
+.btn-google svg {
+  flex-shrink: 0;
+}
+
+.login-privacy {
+  margin-top: 20px;
+  font-size: 11px;
+  color: var(--c-text-3);
+  line-height: 1.5;
+}
+
+/* Loading State */
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--c-bg-3);
+  border-top-color: var(--c-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 24px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--c-text-0);
+  margin-bottom: 8px;
+}
+
+.loading-desc {
+  font-size: 14px;
+  color: var(--c-text-2);
+}
+
+/* Success State */
+.success-icon {
+  margin-bottom: 24px;
+  animation: popIn 0.4s ease;
+}
+
+@keyframes popIn {
+  0% { transform: scale(0); opacity: 0; }
+  70% { transform: scale(1.1); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.success-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--c-success);
+  margin-bottom: 8px;
+}
+
+.success-desc {
+  font-size: 14px;
+  color: var(--c-text-2);
+}
+
+/* Error State */
+.error-icon {
+  margin-bottom: 24px;
+}
+
+.error-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--c-error);
+  margin-bottom: 8px;
+}
+
+.error-desc {
+  font-size: 14px;
+  color: var(--c-text-2);
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.btn-retry {
+  padding: 12px 32px;
+  background: var(--c-bg-3);
+  color: var(--c-text-0);
+  border-radius: var(--r-md);
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 200ms ease;
+  border: 1px solid var(--c-border);
+}
+
+.btn-retry:hover {
+  background: var(--c-bg-hover);
+  border-color: var(--c-text-4);
+}
+
+/* Footer */
+.login-footer {
+  padding: 12px 20px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--c-text-4);
+  border-top: 1px solid var(--c-border);
+}

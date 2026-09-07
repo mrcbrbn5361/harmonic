@@ -1,0 +1,14 @@
+{
+  "name": "metrolist-website",
+  "version": "1.0.0",
+  "description": "Harmonic Official Website",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^5.0.12"
+  }
+}

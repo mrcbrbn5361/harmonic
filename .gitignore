@@ -1,0 +1,28 @@
+# Ignore Electron app artifacts
+node_modules/
+harmonic-store-backup/
+temp/
+*.local
+desktop/dist/
+desktop/release/
+desktop/*.log
+desktop/smoke-*
+desktop/test-*
+website/dist/
+
+# Ignore git credentials
+.gitcredentials
+
+# Ignore log files
+*.log
+
+# Ignore DB files
+*.db
+*.sqlite
+
+# Ignore OS generated files
+.DS_Store
+Thumbs.db
+
+# Ignore lock files
+package-lock.json

@@ -1,0 +1,31 @@
+{
+  "name": "harmonic-desktop",
+  "version": "1.0.0",
+  "description": "Harmonic - Premium music streaming experience for your desktop",
+  "private": true,
+  "workspaces": [
+    "desktop",
+    "website"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=desktop",
+    "build": "npm run build --workspace=desktop",
+    "build:website": "npm run build --workspace=website",
+    "build:installer": "npm run build:installer --workspace=desktop",
+    "build:win": "npm run build:win --workspace=desktop"
+  },
+  "author": "Harmonic Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/harmonic-app/harmonic"
+  },
+  "devDependencies": {
+    "7zip-bin": "^5.2.0",
+    "electron-builder": "^24.9.1",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "discord-rpc": "^4.0.1"
+  }
+}

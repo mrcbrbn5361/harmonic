@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com data: blob:; media-src *; connect-src *;">
+  <title>Harmonic</title>
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Custom Title Bar -->
+    <header class="titlebar" id="titlebar">
+      <div class="titlebar-drag">
+        <div class="titlebar-brand">
+          <div class="brand-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M8 12a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="12" cy="15" r="2" fill="currentColor"/>
+            </svg>
+          </div>
+          <span class="brand-name">Harmonic</span>
+        </div>
+      </div>
+      <div class="titlebar-controls">
+        <button class="tb-btn" id="tbMinimize" title="Küçült">
+          <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
+        </button>
+        <button class="tb-btn" id="tbMaximize" title="Büyüt">
+          <svg width="10" height="10" viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" stroke="currentColor" fill="none"/></svg>
+        </button>
+        <button class="tb-btn tb-close" id="tbClose" title="Kapat">
+          <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1L9 9M1 9L9 1" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="layout">
+      <!-- Sidebar -->
+      <nav class="sidebar" id="sidebar">
+        <div class="sidebar-section">
+          <a class="nav-link active" data-page="home" href="#">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <span>Ana Sayfa</span>
+          </a>
+          <a class="nav-link" data-page="search" href="#">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span>Ara</span>
+          </a>
+          <a class="nav-link" data-page="library" href="#">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>Kütüphane</span>
+          </a>
+          <a class="nav-link" data-page="liked" href="#">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            <span>Beğenilenler</span>
+          </a>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-section sidebar-playlists">
+          <div class="sidebar-section-header">
+            <span>Oynatma Listeleri</span>
+            <button class="icon-btn-sm" id="btnNewPlaylist" title="Yeni Liste">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+          <div class="playlists-container" id="playlistsContainer">
+            <div class="empty-hint">Henüz liste yok</div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+<!-- User Section -->
+          <div id="userSection" class="user-section">
+            <button class="nav-link" id="btnAuthLogin" style="display:flex">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              <span>Giriş Yap</span>
+            </button>
+            <div id="userInfo" class="user-info" style="display:none">
+              <div class="user-avatar" id="userAvatar">
+                <span id="avatarText">?</span>
+              </div>
+              <div class="user-meta">
+                <div class="user-name" id="userName">-</div>
+                <div class="user-email" id="userEmail">-</div>
+              </div>
+            </div>
+            <div id="loginPrompt" style="display:none; margin-top: 10px; padding: 10px; background: var(--c-bg-2); border-radius: 6px">
+              <h4>Hesabına Giriş Yapın</h4>
+              <p>YouTube Music hesabınızla giriş yaparak kütüphaneye erişin</p>
+              <button class="btn btn-sm btn-primary" id="btnOpenLogin">Giriş Yap</button>
+            </div>
+          </div>
+          <a class="nav-link" data-page="settings" href="#">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            <span>Ayarlar</span>
+          </a>
+        </div>
+      </nav>
+
+      <!-- Main Content -->
+      <main class="main-content" id="mainContent">
+        <!-- Home Page -->
+        <section class="page active" data-page="home">
+          <div class="page-toolbar">
+            <h1 class="page-title">Hoş Geldiniz</h1>
+          </div>
+          <div class="page-scroll" id="homeContent">
+            <div class="welcome-message" style="text-align: center; padding: 40px; color: var(--c-text-2)">
+              <svg width="80" height="80" viewBox="0 0 24 24" fill="none" margin-bottom="20" style="stroke: var(--c-border);">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M8 12a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                <circle cx="12" cy="15" r="2" fill="currentColor"/>
+              </svg>
+              <h2>Welcome to Harmonic</h2>
+              <p>Please sign in with your Google account to access your music library</p>
+              <button class="btn btn-primary" id="btnStartWelcome" style="margin-top: 20px">Giriş Yap</button>
+            </div>
+            <div class="skeleton-grid">
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+              <div class="skeleton-card"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Search Page -->
+        <section class="page" data-page="search">
+          <div class="page-toolbar">
+            <div class="search-bar">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" id="searchInput" placeholder="Şarkı, albüm, sanatçı veya oynatma listesi ara..." autocomplete="off" spellcheck="false">
+              <button class="search-clear" id="searchClear">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div class="search-filters" id="searchFilters">
+              <button class="chip active" data-filter="all">Tümü</button>
+              <button class="chip" data-filter="songs">Şarkılar</button>
+              <button class="chip" data-filter="videos">Videolar</button>
+              <button class="chip" data-filter="albums">Albümler</button>
+              <button class="chip" data-filter="artists">Sanatçılar</button>
+            </div>
+          </div>
+          <div class="suggestions-dropdown" id="suggestionsDropdown"></div>
+          <div class="page-scroll" id="searchResults">
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              </div>
+              <p class="empty-text">Müzik aramaya başlayın</p>
+              <p class="empty-hint-text">Sanatçı, şarkı veya albüm adı yazın</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Library Page -->
+        <section class="page" data-page="library">
+          <div class="page-toolbar">
+            <h1 class="page-title">Kütüphane</h1>
+            <div class="tab-bar" id="libraryTabs">
+              <button class="tab active" data-tab="recent">Son Çalınanlar</button>
+              <button class="tab" data-tab="songs">Şarkılar</button>
+              <button class="tab" data-tab="albums">Albümler</button>
+              <button class="tab" data-tab="playlists">Oynatma Listeleri</button>
+            </div>
+          </div>
+          <div class="page-scroll" id="libraryContent">
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              </div>
+              <p class="empty-text">Henüz bir şey eklenmemiş</p>
+              <p class="empty-hint-text">Müzik dinledikçe burada görünecek</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Liked Page -->
+        <section class="page" data-page="liked">
+          <div class="page-toolbar">
+            <h1 class="page-title">Beğenilen Şarkılar</h1>
+          </div>
+          <div class="page-scroll" id="likedContent">
+            <div class="empty-state">
+              <div class="empty-icon">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+              </div>
+              <p class="empty-text">Henüz beğeni yok</p>
+              <p class="empty-hint-text">Beğendiğiniz şarkılar burada görünecek</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Settings Page -->
+        <section class="page" data-page="settings">
+          <div class="page-toolbar">
+            <h1 class="page-title">Ayarlar</h1>
+          </div>
+          <div class="page-scroll">
+            <div class="settings-group">
+              <h3 class="settings-group-title">Görünüm</h3>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Tema</span>
+                  <span class="setting-desc">Uygulama temasını seçin</span>
+                </div>
+                <select class="setting-select" id="settingTheme">
+                  <option value="dark">Koyu</option>
+                  <option value="light">Açık</option>
+                  <option value="system">Sistem</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h3 class="settings-group-title">Oynatma</h3>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Ses Kalitesi</span>
+                  <span class="setting-desc">Daha yüksek kalite daha fazla bant genişliği kullanır</span>
+                </div>
+                <select class="setting-select" id="settingQuality">
+                  <option value="low">Düşük (96 kbps)</option>
+                  <option value="medium">Orta (128 kbps)</option>
+                  <option value="high">Yüksek (256 kbps)</option>
+                </select>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Otomatik Oynatma</span>
+                  <span class="setting-desc">Sıradaki şarkıyı otomatik olarak çal</span>
+                </div>
+                <label class="toggle">
+                  <input type="checkbox" id="settingAutoPlay" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h3 class="settings-group-title">YouTube / Google Hesabı</h3>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">OAuth2 Kimlik Bilgileri</span>
+                  <span class="setting-desc">Uygulamaya gömülü — ek bir işlem gerekmez</span>
+                </div>
+                <span class="setting-value" id="googleOAuthStatus">✓ Yapılandırıldı</span>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h3 class="settings-group-title">Discord Rich Presence</h3>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Kullanıcı Token'ı</span>
+                  <span class="setting-desc">Discord konsolundan alınan token (Gateway kapak için gerekli)</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="password" id="discordTokenInput" placeholder="Token yapıştırın..." style="background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:6px 10px;color:var(--c-text-1);font-size:12px;width:200px">
+                  <button class="btn btn-ghost" id="btnDiscordGwConnect" style="font-size:11px;padding:5px 10px">Bağlan</button>
+                  <button class="btn btn-ghost" id="btnDiscordGwDisconnect" style="font-size:11px;padding:5px 10px;display:none">Kes</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Durum</span>
+                  <span class="setting-desc">Discord masaüstü uygulaması açıkken otomatik bağlanır</span>
+                </div>
+                <span class="setting-value" id="discordConnectionStatus">—</span>
+              </div>
+              <div style="margin-top:8px;font-size:11px;color:var(--c-text-3)">
+                <p>Token girilmediyse temel presence (kapaksız) çalışır. Token girilirse şarkı kapağı + buton görünür.</p>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h3 class="settings-group-title">Uygulama Hakkında</h3>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Sürüm</span>
+                </div>
+                <span class="setting-value">v1.0.0</span>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Lisans</span>
+                </div>
+                <span class="setting-value">MIT License</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Bottom Player -->
+    <footer class="player" id="player">
+      <div class="player-song">
+        <div class="player-thumb" id="playerThumb"></div>
+        <div class="player-info">
+          <div class="player-title" id="playerTitle">Harmonic</div>
+          <div class="player-artist" id="playerArtist">Müzik seçin ve oynatın</div>
+        </div>
+        <button class="icon-btn" id="btnLike" title="Beğen">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </button>
+      </div>
+
+      <div class="player-center">
+        <div class="player-buttons">
+          <button class="icon-btn" id="btnShuffle" title="Karıştır">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+          </button>
+          <button class="icon-btn" id="btnPrev" title="Önceki">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+          </button>
+          <button class="play-btn" id="btnPlay" title="Oynat">
+            <svg class="icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><polygon points="6,3 20,12 6,21"/></svg>
+            <svg class="icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="5" y="3" width="4" height="18"/><rect x="15" y="3" width="4" height="18"/></svg>
+          </button>
+          <button class="icon-btn" id="btnNext" title="Sonraki">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+          </button>
+          <button class="icon-btn" id="btnRepeat" title="Tekrarla">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+          </button>
+        </div>
+        <div class="player-progress">
+          <span class="time" id="timeNow">0:00</span>
+          <div class="scrubber" id="scrubber">
+            <div class="scrubber-track">
+              <div class="scrubber-fill" id="scrubberFill"></div>
+            </div>
+            <div class="scrubber-thumb" id="scrubberThumb"></div>
+          </div>
+          <span class="time" id="timeEnd">0:00</span>
+        </div>
+      </div>
+
+      <div class="player-right">
+        <button class="icon-btn" id="btnLyrics" title="Şarkı Sözleri">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
+        <button class="icon-btn" id="btnQueue" title="Sıra">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        </button>
+        <div class="volume-group">
+          <button class="icon-btn" id="btnVolume" title="Ses">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+          </button>
+          <input type="range" class="volume-slider" id="volumeSlider" min="0" max="100" value="80">
+        </div>
+      </div>
+    </footer>
+
+    <!-- Side Panels -->
+    <div class="panel panel-right" id="lyricsPanel">
+      <div class="panel-header">
+        <h2>Şarkı Sözleri</h2>
+        <button class="icon-btn" id="closeLyrics">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="panel-body" id="lyricsBody">
+        <div class="empty-state">
+          <p class="empty-hint-text">Şarkı sözleri yükleniyor...</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel panel-right" id="queuePanel">
+      <div class="panel-header">
+        <h2>Oynatma Sırası</h2>
+        <button class="icon-btn" id="closeQueue">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="panel-body" id="queueBody">
+        <div class="empty-state">
+          <p class="empty-hint-text">Sıra boş</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backdrop for panels -->
+    <div class="panel-backdrop" id="panelBackdrop"></div>
+
+    <!-- Playlist Modal -->
+    <div class="modal-overlay" id="playlistModal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Yeni Oynatma Listesi</h3>
+          <button class="icon-btn" id="closePlaylistModal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <input type="text" class="modal-input" id="playlistNameInput" placeholder="Liste adı..." maxlength="60">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="cancelPlaylist">İptal</button>
+          <button class="btn btn-primary" id="createPlaylist">Oluştur</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./components/app.ts"></script>
+</body>
+</html>

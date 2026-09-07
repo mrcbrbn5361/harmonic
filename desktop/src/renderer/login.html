@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://*.googleusercontent.com data: blob:; connect-src *;">
+  <title>Harmonic - Giriş</title>
+  <link rel="stylesheet" href="./styles/login.css">
+</head>
+<body>
+  <div class="login-container">
+    <!-- Titlebar -->
+    <header class="titlebar">
+      <div class="titlebar-drag"></div>
+      <div class="titlebar-controls">
+        <button class="tb-btn tb-close" id="tbClose">
+          <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1L9 9M1 9L9 1" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <div class="login-content">
+      <!-- Logo -->
+      <div class="logo-section">
+        <div class="logo-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.2"/>
+            <path d="M8 12a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            <circle cx="12" cy="15" r="2" fill="currentColor"/>
+          </svg>
+        </div>
+        <h1 class="brand-name">Harmonic</h1>
+        <p class="brand-tagline">YouTube Music deneyiminiz</p>
+      </div>
+
+      <!-- State: Initial -->
+      <div id="stateInitial" class="login-state active">
+        <div class="google-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+        </div>
+        <h2 class="login-title">YouTube Music'e giriş yapın</h2>
+        <p class="login-desc">Müzik dinlemek ve kütüphanenizi yönetmek için Google hesabınızla giriş yapın.</p>
+        <button class="btn-google" id="btnLogin">
+          <svg width="20" height="20" viewBox="0 0 24 24">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+          <span>Hesabınızla devam et</span>
+        </button>
+        <p class="login-privacy">Giriş yaparak Harmonic'in<a href="#" id="linkPrivacy">Gizlilik Politikası'nı</a> kabul etmiş olursunuz.</p>
+      </div>
+
+      <!-- State: Token Input (Hidden by default) -->
+      <div id="stateTokenInput" class="login-state" style="display:none">
+        <div class="google-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24">
+            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+          </svg>
+        </div>
+        <h2 class="login-title">Discord Token Girişi</h2>
+        <p class="login-desc">Discord Rich Presence için token girin (isteğe bağlı).</p>
+        <div class="token-input-group">
+          <input type="password" id="tokenInput" placeholder="Discord token'ı girin..." style="width:100%;padding:10px;border:1px solid var(--c-border);border-radius:6px;margin-bottom:10px;color:var(--c-text-1)">
+          <div style="display:flex;justify-content:flex-end">
+            <button class="btn btn-ghost" id="btnConnectToken">Bağlan</button>
+            <button class="btn btn-ghost" id="btnSkipToken">Atla</button>
+          </div>
+        </div>
+        <p class="login-privacy" style="font-size:11px;margin-top:10px">Token girilmediyse temel presence (kapaksız) çalışır. Token girilirse kapak + buton görünür.</p>
+      </div>
+
+      <!-- State: Loading -->
+      <div id="stateLoading" class="login-state">
+        <div class="spinner"></div>
+        <h2 class="loading-title">Giriş yapılıyor...</h2>
+        <p class="loading-desc">Google hesabınızla doğrulama yapılıyor.</p>
+      </div>
+
+      <!-- State: Success -->
+      <div id="stateSuccess" class="login-state">
+        <div class="success-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+          </svg>
+        </div>
+        <h2 class="success-title">Giriş başarılı!</h2>
+        <p class="success-desc" id="successUserName"></p>
+      </div>
+
+      <!-- State: Error -->
+      <div id="stateError" class="login-state">
+        <div class="error-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#e8364e" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+          </svg>
+        </div>
+        <h2 class="error-title" id="errorTitle">Giriş hatası</h2>
+        <p class="error-desc" id="errorDesc"></p>
+        <button class="btn-retry" id="btnRetry">Tekrar dene</button>
+      </div>
+
+      <!-- State: Banned -->
+      <div id="stateBanned" class="login-state">
+        <div class="error-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <h2 class="error-title">Hesap askıya alındı</h2>
+        <p class="error-desc">Bu Google hesabı YouTube için askıya alınmış veya yasaklanmış. Lütfen farklı bir hesapla giriş yapın veya Google Destek ile iletişime geçin.</p>
+        <button class="btn-retry" id="btnRetryBanned">Farklı hesapla giriş yap</button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="login-footer">
+      <span>Harmonic v1.0.0</span>
+    </div>
+  </div>
+
+  <script>
+    const api = window.api;
+    let currentState = 'Initial';
+
+    function switchState(name) {
+      currentState = name;
+      document.querySelectorAll('.login-state').forEach(s => s.classList.remove('active'));
+      document.getElementById('state' + name)?.classList.add('active');
+    }
+
+    function closeWindow() {
+      api?.window?.close();
+    }
+
+    function showToast(message, type) {
+      const existing = document.querySelector('.toast');
+      if (existing) existing.remove();
+      const toast = document.createElement('div');
+      toast.className = 'toast toast-' + (type || 'info');
+      toast.innerHTML = '<span>' + message + '</span>';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.classList.add('show'), 10);
+      setTimeout(() => { toast.classList.remove('show'); setTimeout(() => toast.remove(), 300); }, 4000);
+    }
+
+    document.getElementById('tbClose')?.addEventListener('click', closeWindow);
+
+    document.getElementById('btnLogin')?.addEventListener('click', async () => {
+      switchState('Loading');
+      const result = await api?.auth?.login();
+      if (result?.success) {
+        document.getElementById('successUserName').textContent = result.user?.name || 'Kullanıcı';
+        switchState('Success');
+        setTimeout(() => closeWindow(), 2000);
+      } else {
+        if (result?.error?.includes('askıya') || result?.error?.includes('yasak')) {
+          document.getElementById('errorDesc').textContent = result.error;
+          switchState('Banned');
+        } else {
+          document.getElementById('errorTitle').textContent = 'Giriş hatası';
+          document.getElementById('errorDesc').textContent = result?.error || 'Bilinmeyen bir hata oluştu.';
+          switchState('Error');
+        }
+      }
+    });
+
+    document.getElementById('btnRetry')?.addEventListener('click', () => switchState('Initial'));
+    document.getElementById('btnRetryBanned')?.addEventListener('click', () => switchState('Initial'));
+
+    // Gizli token girişi: logoya 3 kez tıkla
+    let logoClickCount = 0;
+    let logoClickTimer = null;
+    document.querySelector('.logo-icon')?.addEventListener('click', () => {
+      logoClickCount++;
+      clearTimeout(logoClickTimer);
+      logoClickTimer = setTimeout(() => { logoClickCount = 0; }, 1000);
+      if (logoClickCount >= 3) {
+        logoClickCount = 0;
+        clearTimeout(logoClickTimer);
+        switchState('TokenInput');
+      }
+    });
+
+    document.getElementById('btnSkipToken')?.addEventListener('click', () => {
+      switchState('Success');
+      setTimeout(() => closeWindow(), 1000);
+    });
+
+    document.getElementById('btnConnectToken')?.addEventListener('click', async () => {
+      const token = document.getElementById('tokenInput').value.trim();
+      if (!token) {
+        showToast('Token girin.', 'warning');
+        return;
+      }
+      try {
+        const ok = await api?.discord?.gwConnect(token);
+        if (ok) {
+          await api?.store?.set('discordToken', token);
+          showToast('Discord Gateway bağlandı. Şarkı kapağı artık görünmeli.', 'success');
+          switchState('Success');
+          setTimeout(() => closeWindow(), 1000);
+        } else {
+          showToast('Token geçersiz veya Discord kapalı.', 'error');
+        }
+      } catch (e) {
+        showToast('Hata: ' + (e?.message || String(e)), 'error');
+      }
+    });
+
+    window.api?.auth?.onLoginResult?.((result) => {
+      if (result.success) {
+        document.getElementById('successUserName').textContent = result.user?.name || 'Kullanıcı';
+        switchState('Success');
+        setTimeout(() => closeWindow(), 2000);
+      }
+    });
+  </script>
+</body>
+</html>
