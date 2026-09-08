@@ -428,6 +428,7 @@ function setupIPC(): void {
   ipcMain.handle('discord:gwIsReady', () => discordGateway.isReady());
 }
 
+if (!app.isDefaultProtocolClient('harmonic')) app.setAsDefaultProtocolClient('harmonic');
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
 
@@ -488,9 +489,14 @@ app.on('before-quit', () => {
   setTimeout(() => process.exit(0), 500);
 });
 
-app.on('second-instance', () => {
+app.on('second-instance', (_e, argv) => {
+  const deeplink = argv.find(a => a.startsWith('harmonic://'));
+  if (deeplink && mainWindow) mainWindow.webContents.send('auth:deeplink', deeplink);
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   }
+});
+app.on('open-url', (_e, url) => {
+  if (mainWindow) mainWindow.webContents.send('auth:deeplink', url);
 });

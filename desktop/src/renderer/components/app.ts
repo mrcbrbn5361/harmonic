@@ -242,37 +242,32 @@
     const openLoginBtn = $('#btnOpenLogin');
     const startWelcomeBtn = $('#btnStartWelcome');
 
-    if (loginBtn) {
-      loginBtn.addEventListener('click', async () => {
-        showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
-        const opened = await api.auth.loginMusic();
-        if (!opened?.opened) {
-          showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
-          return;
+    async function doGoogleLogin() {
+      // Pages aracılı giriş: harmonic-cc5.pages.dev/auth
+      const authUrl = 'https://harmonic-cc5.pages.dev/auth';
+      try { await api.shell.openExternal(authUrl); } catch {}
+      showToast('Tarayıcıda harmonic-cc5.pages.dev açıldı — Google ile giriş yapın', 'info');
+      // Deeplink ile dönüş bekleniyor: harmonic://auth?code=...
+      api.auth.onDeeplink?.((url:string) => {
+        const u = new URL(url);
+        const code = u.searchParams.get('code');
+        if (code) {
+          api.auth.exchangeCode(code).then(async (res:any)=>{
+            if(res?.success){ state.isLoggedIn=true; state.user=await api.auth.getMusicUser()||await api.auth.getGoogleUser(); updateAuthUI(); await checkAuthState(); loadHome(); showToast('Giriş başarılı!','success'); }
+            else showToast(res?.error||'Kod takas hatası','error');
+          });
         }
-        showChromeImportPrompt(opened);
       });
     }
 
-    if (openLoginBtn) {
-      openLoginBtn.addEventListener('click', async () => {
-        const opened = await api.auth.loginMusic();
-        if (!opened?.opened) { showToast(`Chrome açılamadı: ${opened?.error || ''}`, 'error'); }
-        showChromeImportPrompt(opened);
-      });
-    }
-
-    if (startWelcomeBtn) {
-      startWelcomeBtn.addEventListener('click', async () => {
-        const opened = await api.auth.loginMusic();
-        if (!opened?.opened) { showToast(`Chrome açılamadı: ${opened?.error || ''}`, 'error'); }
-        showChromeImportPrompt(opened);
-      });
-    }
+    if (loginBtn) loginBtn.addEventListener('click', doGoogleLogin);
+    if (openLoginBtn) openLoginBtn.addEventListener('click', doGoogleLogin);
+    if (startWelcomeBtn) startWelcomeBtn.addEventListener('click', doGoogleLogin);
 
     if (logoutBtn) {
       logoutBtn.addEventListener('click', async () => {
-        await api.auth.logoutMusic();
+        await api.auth.logoutGoogle().catch(()=>{});
+        await api.auth.logoutMusic().catch(()=>{});
         state.isLoggedIn = false;
         state.user = null;
         updateAuthUI();
