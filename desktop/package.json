@@ -83,8 +83,9 @@
       "shortcutName": "Harmonic",
       "installerIcon": "assets/icon.ico",
       "uninstallerIcon": "assets/icon.ico",
+      "installerHeader": "assets/installerHeader.bmp",
+      "installerSidebar": "assets/installerSidebar.bmp",
       "installerHeaderIcon": "assets/icon.ico",
-
       "license": "../LICENSE",
       "artifactName": "Harmonic-Setup-${version}-win11.${ext}",
       "include": "installer.nsh",

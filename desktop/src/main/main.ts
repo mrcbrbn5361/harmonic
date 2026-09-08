@@ -40,8 +40,11 @@ function createWindow(): void {
     minHeight: 640,
     frame: false,
     titleBarStyle: 'hidden',
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#07070a',
+    backgroundMaterial: 'mica' as any,
     show: false,
+    roundedCorners: true,
+    thickFrame: true,
     icon: path.join(__dirname, '../../assets/icon.png'),
       webPreferences: {
         nodeIntegration: false,

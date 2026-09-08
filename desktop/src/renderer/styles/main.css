@@ -4,17 +4,17 @@
    ============================================ */
 
 :root {
-  /* Colors - refined dark palette */
-  --c-bg-0: #09090b;
-  --c-bg-1: #101012;
-  --c-bg-2: #18181b;
-  --c-bg-3: #232326;
-  --c-bg-hover: #2a2a30;
-  --c-bg-active: #323238;
-  --c-surface: #141416;
-  --c-border: #232326;
-  --c-border-light: #2e2e32;
-  --c-border-strong: #3a3a40;
+  /* Colors - refined dark palette - OLED premium */
+  --c-bg-0: #07070a;
+  --c-bg-1: #0f1013;
+  --c-bg-2: #191a1f;
+  --c-bg-3: #25262e;
+  --c-bg-hover: #272836;
+  --c-bg-active: #303248;
+  --c-surface: #121318;
+  --c-border: rgba(255,255,255,0.07);
+  --c-border-light: rgba(255,255,255,0.11);
+  --c-border-strong: rgba(255,255,255,0.16);
 
   --c-text-0: #fafafa;
   --c-text-1: #e4e4e7;
@@ -60,6 +60,7 @@
 
 /* Reset */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scrollbar-gutter: stable; }
 
 *:focus-visible {
   outline: 2px solid var(--c-accent);
@@ -82,13 +83,23 @@ select:focus-visible {
 html, body {
   height: 100%;
   overflow: hidden;
-  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-family: 'Inter','Segoe UI Variable','Segoe UI',-apple-system,system-ui,sans-serif;
   font-size: 13px;
   color: var(--c-text-1);
-  background: var(--c-bg-0);
+  background: transparent;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+body::before{
+  content:"";
+  position:fixed; inset:0;
+  background:
+    radial-gradient(900px 600px at 18% 8%, rgba(232,54,78,.10), transparent 60%),
+    radial-gradient(700px 500px at 92% 18%, rgba(124,92,255,.08), transparent 60%),
+    linear-gradient(180deg, #0a0a0e 0%, #07070a 100%);
+  z-index:-1; pointer-events:none;
+}
+#app{ height:100vh; display:flex; flex-direction:column; background: rgba(7,7,10,0.72); backdrop-filter: blur(24px) saturate(130%); -webkit-backdrop-filter: blur(24px) saturate(130%); }
 
 /* Light theme */
 :root[data-theme="light"] {
@@ -126,12 +137,14 @@ input, select { font: inherit; color: inherit; }
    ============================================ */
 .titlebar {
   height: var(--titlebar-h);
-  background: var(--c-bg-1);
+  background: rgba(15,16,19,0.65);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
   display: flex;
   align-items: center;
   justify-content: space-between;
   -webkit-app-region: drag;
-  border-bottom: 1px solid var(--c-border);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
   position: relative;
   z-index: 100;
 }
@@ -200,8 +213,10 @@ input, select { font: inherit; color: inherit; }
    ============================================ */
 .sidebar {
   width: var(--sidebar-w);
-  background: var(--c-bg-1);
-  border-right: 1px solid var(--c-border);
+  background: rgba(15,16,19,0.55);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-right: 1px solid rgba(255,255,255,0.06);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -584,15 +599,15 @@ input, select { font: inherit; color: inherit; }
 }
 
 .card {
-  background: var(--c-bg-1);
+  background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02)), var(--c-bg-1);
   border-radius: var(--r-lg);
   padding: 14px;
   cursor: pointer;
-  transition: background var(--t-normal);
+  transition: transform var(--t-normal), box-shadow var(--t-normal), border-color var(--t-normal);
+  border: 1px solid rgba(255,255,255,.06);
 }
 
-.card:hover { background: var(--c-bg-2); transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--c-border-light); }
-.card { border: 1px solid transparent; }
+.card:hover { background: var(--c-bg-2); transform: translateY(-3px); box-shadow: 0 12px 32px rgba(0,0,0,.45); border-color: rgba(255,255,255,.10); }
 
 .card-thumb {
   width: 100%;
@@ -674,8 +689,11 @@ input, select { font: inherit; color: inherit; }
    ============================================ */
 .player {
   height: var(--player-h);
-  background: var(--c-bg-1);
-  border-top: 1px solid var(--c-border);
+  background: rgba(18,19,24,0.78);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border-top: 1px solid rgba(255,255,255,0.07);
+  box-shadow: 0 -8px 32px rgba(0,0,0,0.35);
   display: flex;
   align-items: center;
   padding: 0 16px;
@@ -755,18 +773,20 @@ input, select { font: inherit; color: inherit; }
 .icon-btn.active { color: var(--c-accent); }
 
 .play-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background: var(--c-text-0);
-  color: var(--c-bg-0);
+  background: linear-gradient(135deg, #fff 0%, #e8e8ea 100%);
+  color: #0a0a0a;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform var(--t-fast);
+  transition: transform var(--t-fast), box-shadow var(--t-fast);
+  box-shadow: 0 4px 16px rgba(0,0,0,.25);
 }
 
-.play-btn:hover { transform: scale(1.06); }
+.play-btn:hover { transform: scale(1.07); box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+.play-btn:active { transform: scale(0.97); }
 
 .player-progress {
   display: flex;
