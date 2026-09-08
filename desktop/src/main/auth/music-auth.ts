@@ -190,12 +190,25 @@ export class MusicAuth {
   // Artık loginWindow'un kendi session'ında cookie zaten var — direkt profili çekip kapat
   async importFromChrome(): Promise<{ success: boolean; cookies: number; error?: string }> {
     try {
-      const cookies = await this.getSession().cookies.get({ url:'https://music.youtube.com' });
+      const ses=this.getSession();
+      // tüm domainlerde ara — accounts.google.com'da cookie olabilir ama music.youtube.com'da henüz yok
+      const urls=['https://music.youtube.com','https://accounts.google.com','https://youtube.com','https://www.youtube.com'];
+      let all: Electron.Cookie[]=[]; for(const u of urls){ try{ const cs=await ses.cookies.get({url:u}); all.push(...cs);}catch{} }
+      // dedupe by name+domain
+      const uniq=new Map<string,Electron.Cookie>(); for(const c of all){ uniq.set(c.name+'|'+c.domain, c); }
+      const cookies=[...uniq.values()];
       if (!cookies.length) return { success:false, cookies:0, error:'Henüz giriş yapılmadı. Pencerede YouTube Music\'e giriş yapın.' };
-      // profil çek, pencereyi kapat
-      try{ this.loginWindow?.close(); }catch{}
+      const hasLogin=cookies.some(c=>c.name==='LOGIN_INFO' || c.name==='SAPISID' || c.name==='__Secure-1PSID');
+      if(!hasLogin) return { success:false, cookies:cookies.length, error:'Giriş tamamlanmamış — YouTube Music ana sayfası yüklenene kadar bekleyin.' };
+      // pencereyi kapatma — kullanıcı tekrar gerekirse açık kalsın, ama profili çek
       const prof = await this.fetchProfileViaAPI().catch(()=>null);
-      if(prof) this.store.set('musicUser', { id:'ytmusic', name:prof.name||'YouTube Music', email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
+      if(prof && (prof.name||prof.email)){
+        this.store.set('musicUser', { id:'ytmusic', name:prof.name||'YouTube Music', email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
+      } else {
+        // profil çekilemediyse bile cookie var → geçici kullanıcı oluştur
+        const existing=this.store.get('musicUser'); if(!existing || !existing.name) this.store.set('musicUser', { id:'ytmusic', name:'YouTube Music', email:'', picture:'', provider:'youtube-music' });
+      }
+      try{ this.loginWindow?.close(); }catch{}
       return { success:true, cookies: cookies.length };
     } catch(e:any){ return { success:false, cookies:0, error:e?.message||String(e)}; }
   }
