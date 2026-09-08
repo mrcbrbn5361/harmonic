@@ -242,36 +242,60 @@
     const openLoginBtn = $('#btnOpenLogin');
     const startWelcomeBtn = $('#btnStartWelcome');
 
-    async function doGoogleLogin() {
-      // Pages aracılı giriş: harmonic-cc5.pages.dev/auth
-      const authUrl = 'https://harmonic-cc5.pages.dev/auth';
-      try { await api.shell.openExternal(authUrl); } catch {}
-      showToast('Tarayıcıda harmonic-cc5.pages.dev açıldı — Google ile giriş yapın', 'info');
-      // Deeplink ile dönüş bekleniyor: harmonic://auth?code=...
-      api.auth.onDeeplink?.((url:string) => {
-        const u = new URL(url);
-        const code = u.searchParams.get('code');
-        if (code) {
-          api.auth.exchangeCode(code).then(async (res:any)=>{
-            if(res?.success){ state.isLoggedIn=true; state.user=await api.auth.getMusicUser()||await api.auth.getGoogleUser(); updateAuthUI(); await checkAuthState(); loadHome(); showToast('Giriş başarılı!','success'); }
-            else showToast(res?.error||'Kod takas hatası','error');
-          });
+    // LOCALSTORAGE'da kaydedilmiş login state'ini kontrol et
+    const storedLogin = localStorage.getItem('hm_harmonic_login');
+    if (storedLogin === '1') {
+      state.isLoggedIn = true;
+      state.user = JSON.parse(localStorage.getItem('hm_harmonic_user') || 'null');
+      updateAuthUI();
+    }
+
+    // Chrome Music Login (orijinal flow)
+    async function doLoginMusic() {
+      showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
+      const opened = await api.auth.loginMusic();
+      if (!opened?.opened) {
+        showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
+        return;
+      }
+      showChromeImportPrompt(opened, (success: boolean, user: any) => {
+        if (success) {
+          localStorage.setItem('hm_harmonic_login', '1');
+          localStorage.setItem('hm_harmonic_user', JSON.stringify(user));
+          state.isLoggedIn = true;
+          state.user = user;
+          updateAuthUI();
+          showToast(`Hoş geldin ${user?.name || ''}!`, 'success');
+        } else {
+          showToast('Giriş iptal edildi', 'error');
+          localStorage.removeItem('hm_harmonic_login');
+          localStorage.removeItem('hm_harmonic_user');
         }
       });
     }
 
-    if (loginBtn) loginBtn.addEventListener('click', doGoogleLogin);
-    if (openLoginBtn) openLoginBtn.addEventListener('click', doGoogleLogin);
-    if (startWelcomeBtn) startWelcomeBtn.addEventListener('click', doGoogleLogin);
+    if (loginBtn) {
+      // Eğer zaten login state' varsa butonu gizle
+      if (state.isLoggedIn) {
+        loginBtn.style.display = 'none';
+      } else {
+        loginBtn.addEventListener('click', doLoginMusic);
+      }
+    }
+    if (openLoginBtn) openLoginBtn.addEventListener('click', doLoginMusic);
+    if (startWelcomeBtn) startWelcomeBtn.addEventListener('click', doLoginMusic);
 
     if (logoutBtn) {
       logoutBtn.addEventListener('click', async () => {
-        await api.auth.logoutGoogle().catch(()=>{});
         await api.auth.logoutMusic().catch(()=>{});
         state.isLoggedIn = false;
         state.user = null;
+        localStorage.removeItem('hm_harmonic_login');
+        localStorage.removeItem('hm_harmonic_user');
         updateAuthUI();
         showToast('Çıkış yapıldı.', 'info');
+        // Login butonunu tekrar göster
+        if (loginBtn) loginBtn.style.display = 'flex';
       });
     }
   }
