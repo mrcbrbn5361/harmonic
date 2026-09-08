@@ -7,6 +7,9 @@ import { DiscordGateway } from './utils/discord-gateway';
 import { GoogleOAuth } from './auth/google-oauth';
 import { MusicAuth } from './auth/music-auth';
 import { StreamResolver } from './api/stream-resolver';
+import { authProvider } from './providers/auth-provider';
+import { volumeRatioProvider } from './providers/volume-ratio';
+import { lyricsProvider } from './providers/lyrics-provider';
 import { autoUpdater } from 'electron-updater';
 
 // Gizli çözücü penceresinde otomatik oynatmaya izin ver (kullanıcı hareketi gerekmesin)
@@ -40,13 +43,13 @@ function createWindow(): void {
     backgroundColor: '#0a0a0a',
     show: false,
     icon: path.join(__dirname, '../../assets/icon.png'),
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true,
-      preload: path.join(__dirname, 'preload.js'),
-      webSecurity: !isDev,
-      sandbox: false
-    }
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+        preload: path.join(__dirname, 'preload.js'),
+        webSecurity: true,
+        sandbox: false
+      }
   });
 
   if (isDev) {
@@ -273,9 +276,15 @@ function setupIPC(): void {
   ipcMain.handle('store:get', (_, key: string) => storeManager.get(key as any));
   ipcMain.handle('store:set', (_, key: string, value: unknown) => { storeManager.set(key as any, value); });
   ipcMain.handle('shell:openExternal', (_, url: string) => {
-    if (typeof url === 'string' && url.startsWith('https://') && !url.includes('javascript:') && !url.includes('file:')) {
-      shell.openExternal(url);
-    }
+    try {
+      const u = new URL(String(url));
+      if (u.protocol !== 'https:') return;
+      if (['music.youtube.com','youtube.com','www.youtube.com','github.com'].some(h => u.hostname === h || u.hostname.endsWith('.'+h)) || u.hostname === 'music.youtube.com') {
+        shell.openExternal(u.toString());
+      } else if (u.hostname.endsWith('youtube.com') || u.hostname.endsWith('ytimg.com')) {
+        shell.openExternal(u.toString());
+      }
+    } catch {}
   });
 
   // ── Auth IPC ─────────────────────────────────
@@ -311,6 +320,7 @@ function setupIPC(): void {
   ipcMain.handle('auth:openChromeLogin', async () => {
     return await musicAuth.openChromeLogin();
   });
+  ipcMain.handle('auth:getLoginUrl', () => musicAuth.getLoginUrl());
   ipcMain.handle('auth:importFromChrome', async () => {
     const result = await musicAuth.importFromChrome();
     if (result.success) {
@@ -344,20 +354,19 @@ function setupIPC(): void {
   ipcMain.handle('discord:getAppId', () => discordRPC.getAppId());
   ipcMain.handle('discord:isReady', () => discordGateway.isReady() || discordRPC.isReady());
   ipcMain.handle('discord:setActivity', async (_, data) => {
-    // Renderer startTimestamp/endTimestamp → Gateway startMs/endMs
+    const enabled = storeManager.get('discordEnabled' as any);
+    if (enabled === false) return;
+    const showButtons = storeManager.get('discordButtons' as any);
+    const showThumbs = storeManager.get('discordThumbnails' as any);
+    if (showButtons === false) delete (data as any).buttons;
+    if (showThumbs === false) { delete (data as any).coverUrl; delete (data as any).largeImageText; }
     const gwData: any = { ...data };
-    if (data.startTimestamp != null && gwData.startMs == null) {
-      gwData.startMs = data.startTimestamp;
-    }
-    if (data.endTimestamp != null && gwData.endMs == null) {
-      gwData.endMs = data.endTimestamp;
-    }
-    if ((data as any).largeImageText && !gwData.largeText) {
-      gwData.largeText = (data as any).largeImageText;
-    }
-    if ((data as any).coverUrl && !gwData.largeImage) {
-      gwData.largeImage = (data as any).coverUrl;
-    }
+    if (data.startTimestamp != null && gwData.startMs == null) gwData.startMs = data.startTimestamp;
+    if (data.endTimestamp != null && gwData.endMs == null) gwData.endMs = data.endTimestamp;
+    if ((data as any).largeImageText && !gwData.largeText) gwData.largeText = (data as any).largeImageText;
+    if ((data as any).coverUrl && !gwData.largeImage) gwData.largeImage = (data as any).coverUrl;
+    if (showButtons === false) delete gwData.buttons;
+    if (showThumbs === false) { delete gwData.largeImage; delete gwData.largeText; }
     if (discordGateway.isReady()) {
       await discordGateway.setActivity(gwData);
     } else if (discordRPC.isReady()) {
@@ -389,6 +398,17 @@ function setupIPC(): void {
     return true;
   });
 
+  // ── Auth clients (ytmdesktop2 auth) ───────
+  ipcMain.handle('auth:clients', () => authProvider.listClients());
+  ipcMain.handle('auth:createClient', (_, d:{appId:string;appName:string}) => authProvider.createManual(d));
+  ipcMain.handle('auth:revokeClient', (_, appId:string) => authProvider.revoke(appId));
+  // ── VolumeRatio ───────────────────────────
+  ipcMain.handle('volumeRatio:isEnabled', () => volumeRatioProvider.isEnabled());
+  ipcMain.handle('volumeRatio:setEnabled', (_, v:boolean) => volumeRatioProvider.setEnabled(v));
+  // ── Lyrics ────────────────────────────────
+  ipcMain.handle('lyrics:isEnabled', () => lyricsProvider.isEnabled());
+  ipcMain.handle('lyrics:setEnabled', (_, v:boolean) => lyricsProvider.setEnabled(v));
+
   // ── Auto-update ─────────────────────────────
   ipcMain.handle('auto:checkForUpdates', () => {
     return { status: 'already_checking' };
@@ -405,7 +425,11 @@ function setupIPC(): void {
   ipcMain.handle('discord:gwIsReady', () => discordGateway.isReady());
 }
 
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) app.quit();
+
 app.whenReady().then(async () => {
+  if (!gotLock) return;
   storeManager = new StoreManager();
   googleAuth = new GoogleOAuth();
   musicAuth = new MusicAuth();
@@ -418,13 +442,6 @@ app.whenReady().then(async () => {
     discordGateway.disconnect();
   });
 
-  // Tek örnek kilidi — ikinci açılışta mevcut pencereyi ön plana al
-  const gotLock = app.requestSingleInstanceLock();
-  if (!gotLock) {
-    app.quit();
-    return;
-  }
-
   // Load Google auth token if available
   if (googleAuth.isGoogleAuthenticated()) {
     const token = googleAuth.getGoogleAccessToken();
@@ -433,28 +450,15 @@ app.whenReady().then(async () => {
 
   await discordRPC.connect();
 
-  // Auto-update checking
-  autoUpdater.checkForUpdatesAndNotify();
-
-  // Auto-update event listeners
-  autoUpdater.on('checking-for-update', () => {
-    console.log('[Auto] Checking for update...');
-  });
-  autoUpdater.on('update-available', (info: any) => {
-    console.log('[Auto] Update available:', info);
-  });
-  autoUpdater.on('update-not-available', (info: any) => {
-    console.log('[Auto] Update not available:', info);
-  });
-  autoUpdater.on('error', (err: any) => {
-    console.error('[Auto] Update error:', err);
-  });
-  autoUpdater.on('download-progress', (progress: any) => {
-    console.log('[Auto] Download progress:', progress);
-  });
-  autoUpdater.on('update-downloaded', (info: any) => {
-    console.log('[Auto] Update downloaded:', info);
-  });
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.on('checking-for-update', () => console.log('[Auto] Checking...'));
+  autoUpdater.on('update-available', (info: any) => { console.log('[Auto] Available:', info.version); mainWindow?.webContents.send('auto:update-available', info); });
+  autoUpdater.on('update-not-available', () => console.log('[Auto] Not available'));
+  autoUpdater.on('error', (err: any) => { console.error('[Auto] Error:', err); dialog.showErrorBox('Güncelleme Hatası', String(err?.message || err)); });
+  autoUpdater.on('download-progress', (p: any) => mainWindow?.webContents.send('auto:download-progress', p));
+  autoUpdater.on('update-downloaded', (info: any) => { console.log('[Auto] Downloaded:', info.version); mainWindow?.webContents.send('auto:update-downloaded', info); });
+  autoUpdater.checkForUpdatesAndNotify().catch(()=>{});
 
   setupIPC();
   createWindow();

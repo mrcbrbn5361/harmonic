@@ -83,13 +83,17 @@ export class DiscordRPC {
         instance: false
       };
 
-      // largeImageKey: sadece portal'da yüklü asset ise çalışır
-      if (typeof data.largeImageKey === 'string' && data.largeImageKey && !data.largeImageKey.startsWith('http') && data.largeImageKey !== '?') {
-        payload.largeImageKey = data.largeImageKey;
-        payload.largeImageText = data.largeImageText || 'Harmonic';
+      // ytmdesktop2 referans: external http cover'lar gateway'de mp:external'e çevrilir, RPC'de direkt URL denenir
+      const cover = (data.coverUrl || data.largeImageKey || '') as string;
+      if (cover && cover.startsWith('http')) {
+        // discord-rpc external URL'i largeImageKey olarak kabul eder (fallback: logo yoksa Discord ? gösterir)
+        (payload as any).largeImageKey = cover;
+        (payload as any).largeImageText = data.largeImageText || data.details || 'Harmonic';
+      } else if (typeof data.largeImageKey === 'string' && data.largeImageKey && data.largeImageKey !== '?') {
+        (payload as any).largeImageKey = data.largeImageKey;
+        (payload as any).largeImageText = data.largeImageText || 'Harmonic';
       } else if (typeof data.coverUrl === 'string' && data.coverUrl) {
-        // HTTP cover URL — RPC bunu desteklemez ama text olarak göster
-        payload.largeImageText = data.largeImageText || data.details || 'Harmonic';
+        (payload as any).largeImageText = data.largeImageText || data.details || 'Harmonic';
       }
 
       if (typeof data.smallImageKey === 'string' && data.smallImageKey && !data.smallImageKey.startsWith('http')) {

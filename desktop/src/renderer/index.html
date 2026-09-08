@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com data: blob:; media-src *; connect-src *;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com data: blob:; media-src 'self' https://*.googlevideo.com https://*.youtube.com blob:; connect-src 'self' https://music.youtube.com https://www.youtube.com https://*.googlevideo.com https://discord.com https://discordapp.com wss://gateway.discord.gg http://localhost:5173 ws://localhost:5173;">
   <title>Harmonic</title>
   <link rel="stylesheet" href="./styles/main.css">
 </head>
@@ -113,15 +113,13 @@
             <h1 class="page-title">Hoş Geldiniz</h1>
           </div>
           <div class="page-scroll" id="homeContent">
-            <div class="welcome-message" style="text-align: center; padding: 40px; color: var(--c-text-2)">
-              <svg width="80" height="80" viewBox="0 0 24 24" fill="none" style="stroke: var(--c-border); margin-bottom: 20px;">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5"/>
-                <path d="M8 12a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                <circle cx="12" cy="15" r="2" fill="currentColor"/>
-              </svg>
-              <h2>Harmonic'e Hoş Geldiniz</h2>
-              <p>Müzik kütüphanenize erişmek için Google hesabınızla giriş yapın</p>
-              <button class="btn btn-primary" id="btnStartWelcome" style="margin-top: 20px">Giriş Yap</button>
+            <div class="welcome-message" style="text-align:center; padding:48px 32px; color:var(--c-text-2); background:var(--c-bg-1); border:1px solid var(--c-border); border-radius:var(--r-xl); max-width:520px; margin:24px auto;">
+              <div style="width:72px;height:72px;margin:0 auto 20px;background:var(--c-accent-subtle);border-radius:var(--r-xl);display:flex;align-items:center;justify-content:center;color:var(--c-accent)">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="9"/><path d="M9 9a4 4 0 0 1 6 0"/><circle cx="12" cy="15" r="1.8" fill="currentColor" stroke="none"/></svg>
+              </div>
+              <h2 style="color:var(--c-text-0);font-size:20px;margin-bottom:8px">Harmonic'e Hoş Geldiniz</h2>
+              <p style="font-size:13px;line-height:1.6;max-width:36ch;margin:0 auto">YouTube Music hesabınızla giriş yapın, kütüphaneniz ve çalma listeleriniz anında senkronize olsun.</p>
+              <button class="btn btn-primary" id="btnStartWelcome" style="margin-top:20px;padding:10px 22px">Giriş Yap</button>
             </div>
             <div class="skeleton-grid">
               <div class="skeleton-card"></div>
@@ -260,8 +258,29 @@
               <h3 class="settings-group-title">Discord Rich Presence</h3>
               <div class="setting-row">
                 <div class="setting-label">
-                  <span class="setting-name">Kullanıcı Token'ı</span>
-                  <span class="setting-desc">Discord konsolundan alınan token (Gateway kapak için gerekli)</span>
+                  <span class="setting-name">Discord'da Göster</span>
+                  <span class="setting-desc">Dinlediğin şarkıyı Discord profilinde göster</span>
+                </div>
+                <label class="toggle"><input type="checkbox" id="discordEnabled" checked><span class="toggle-slider"></span></label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Butonları Göster</span>
+                  <span class="setting-desc">YouTube Music'te Aç / Kanala Git</span>
+                </div>
+                <label class="toggle"><input type="checkbox" id="discordButtons" checked><span class="toggle-slider"></span></label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Kapak Görseli</span>
+                  <span class="setting-desc">Şarkı kapağını büyük görsel olarak göster</span>
+                </div>
+                <label class="toggle"><input type="checkbox" id="discordThumbnails" checked><span class="toggle-slider"></span></label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Kullanıcı Token'ı (opsiyonel)</span>
+                  <span class="setting-desc">Gateway ile kapak + buton için, boşsa sadece IPC</span>
                 </div>
                 <div style="display:flex;gap:6px;align-items:center">
                   <input type="password" id="discordTokenInput" placeholder="Token yapıştırın..." style="background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:6px 10px;color:var(--c-text-1);font-size:12px;width:200px">
@@ -277,7 +296,27 @@
                 <span class="setting-value" id="discordConnectionStatus">—</span>
               </div>
               <div style="margin-top:8px;font-size:11px;color:var(--c-text-3)">
-                <p>Token girilmediyse temel presence (kapaksız) çalışır. Token girilirse şarkı kapağı + buton görünür.</p>
+                <p>Kapalıyken presence durur. Token girilmediyse IPC ile kapaksız çalışır.</p>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h3 class="settings-group-title">Ses</h3>
+              <div class="setting-row">
+                <div class="setting-label"><span class="setting-name">Ses Normalizasyonu</span><span class="setting-desc">Parçalar arası ses dengesini korur (VolumeRatio)</span></div>
+                <label class="toggle"><input type="checkbox" id="volumeRatioEnabled"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label"><span class="setting-name">Şarkı Sözleri</span><span class="setting-desc">Lyrics panelini etkinleştir</span></div>
+                <label class="toggle"><input type="checkbox" id="lyricsEnabled" checked><span class="toggle-slider"></span></label>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h3 class="settings-group-title">Bağlı Uygulamalar (Auth)</h3>
+              <div id="authClientsList" style="font-size:12px;color:var(--c-text-2)"></div>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <input id="authAppId" placeholder="appId" style="flex:1;background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:6px">
+                <input id="authAppName" placeholder="Uygulama adı" style="flex:1;background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:6px">
+                <button class="btn btn-primary" id="authCreateBtn" style="padding:6px 12px">Ekle</button>
               </div>
             </div>
             <div class="settings-group">

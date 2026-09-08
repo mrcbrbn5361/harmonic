@@ -172,61 +172,34 @@ export class MusicAuth {
   // 1) Ayrı profille Chrome'u --remote-debugging-port=9222 ile başlat
   //    (kullanıcının ana Chrome'una dokunmaz, giriş yapması gerekir)
   // 2) "Girişi Aktar" — CDP üzerinden cookie'leri çekip Electron session'a yazar
-  async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean }> {
-    // Önce Chrome zaten port'ta mı çalışıyor diye bak
+  getLoginUrl(): string { return 'https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com%2F'; }
+  async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean; url?: string }> {
+    // Artık harici Chrome yerine Electron'un kendi persist:harmonic penceresini açıyoruz — güncelleme sonrası da kalıcı
     try {
-      const v1: any = await CDP.Version({ host: '127.0.0.1', port: CHROME_DEBUG_PORT });
-      if (v1) return { opened: true, alreadyRunning: true };
-    } catch {}
-
-    // Chrome binary'sini bul
-    const candidates = [
-      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-      (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe'
-    ];
-    let chromePath = '';
-    for (const p of candidates) {
-      try { if (fs.existsSync(p)) { chromePath = p; break; } } catch {}
-    }
-    if (!chromePath) {
-      return { opened: false, error: 'Chrome bulunamadı. Google Chrome yüklü mü?' };
-    }
-
-    // Ayrı profil: kullanıcının Chrome'unu kilitlememek için
-    const tmpProfile = (process.env.TEMP || 'C:\\Temp') + '\\harmonic-chrome-profile';
-    try { fs.mkdirSync(tmpProfile, { recursive: true }); } catch {}
-
-    try {
-      const child = spawn(chromePath, [
-        `--remote-debugging-port=${CHROME_DEBUG_PORT}`,
-        '--remote-allow-origins=*',
-        `--user-data-dir=${tmpProfile}`,
-        '--no-first-run',
-        '--no-default-browser-check',
-        'https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com%2F'
-      ], {
-        detached: true,
-        stdio: 'ignore'
+      if (this.loginWindow && !this.loginWindow.isDestroyed()) { this.loginWindow.focus(); return { opened:true, alreadyRunning:true, url:this.getLoginUrl() }; }
+      this.loginWindow = new BrowserWindow({
+        width: 1000, height: 700, show: true, autoHideMenuBar:true,
+        webPreferences: { partition: MUSIC_PARTITION, nodeIntegration:false, contextIsolation:true, sandbox:true }
       });
-      child.unref();
-    } catch (e: any) {
-      return { opened: false, error: 'Chrome başlatılamadı: ' + (e?.message || String(e)) };
-    }
-
-    // Debug port açılana kadar bekle (max 8 sn)
-    for (let i = 0; i < 16; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      try {
-        const v: any = await CDP.Version({ host: '127.0.0.1', port: CHROME_DEBUG_PORT });
-        if (v) return { opened: true };
-      } catch {}
-    }
-    return { opened: false, error: 'Chrome başlatıldı ama debug portu açılmadı. Chrome\'u kapatıp tekrar deneyin.' };
+      this.loginWindow.loadURL(this.getLoginUrl());
+      this.loginWindow.on('closed', ()=> this.loginWindow=null);
+      return { opened:true, url:this.getLoginUrl() };
+    } catch(e:any){ return { opened:false, error:e?.message||String(e), url:this.getLoginUrl() }; }
   }
 
-  // CDP üzerinden Chrome'dan cookie'leri çek, Electron session'a aktar
+  // Artık loginWindow'un kendi session'ında cookie zaten var — direkt profili çekip kapat
   async importFromChrome(): Promise<{ success: boolean; cookies: number; error?: string }> {
+    try {
+      const cookies = await this.getSession().cookies.get({ url:'https://music.youtube.com' });
+      if (!cookies.length) return { success:false, cookies:0, error:'Henüz giriş yapılmadı. Pencerede YouTube Music\'e giriş yapın.' };
+      // profil çek, pencereyi kapat
+      try{ this.loginWindow?.close(); }catch{}
+      const prof = await this.fetchProfileViaAPI().catch(()=>null);
+      if(prof) this.store.set('musicUser', { id:'ytmusic', name:prof.name||'YouTube Music', email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
+      return { success:true, cookies: cookies.length };
+    } catch(e:any){ return { success:false, cookies:0, error:e?.message||String(e)}; }
+  }
+  async importFromChromeLegacy(): Promise<{ success: boolean; cookies: number; error?: string }> {
     let client: any;
     try {
       client = await CDP({ host: '127.0.0.1', port: CHROME_DEBUG_PORT });
@@ -460,8 +433,13 @@ export class MusicAuth {
 
   async logout(): Promise<void> {
     try {
-      await this.getSession().clearStorageData({ storages: ['cookies', 'localstorage', 'cachestorage', 'indexdb'] });
+      await this.getSession().clearStorageData({ storages: ['cookies', 'localstorage', 'cachestorage', 'indexdb', 'serviceworkers'] });
     } catch {}
     this.store.set('musicUser', null);
+    // temp chrome profile temizliği
+    try {
+      const tmpProfile = (process.env.TEMP || 'C:\\Temp') + '\\harmonic-chrome-profile';
+      if (fs.existsSync(tmpProfile)) fs.rmSync(tmpProfile, { recursive: true, force: true });
+    } catch {}
   }
 }

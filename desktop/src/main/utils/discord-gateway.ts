@@ -101,11 +101,11 @@ async function resolveExternalAsset(
           if (json.external_asset_path) {
             resolve(`mp:external/${json.external_asset_path}`);
           } else {
-            console.error('[Discord GW] Asset çözümleme başarısız:', data.substring(0, 200));
+            console.error('[Discord GW] Asset çözümleme başarısız');
             resolve(null);
           }
         } catch {
-          console.error('[Discord GW] Asset JSON parse hatası:', data.substring(0, 200));
+          console.error('[Discord GW] Asset JSON parse hatası');
           resolve(null);
         }
       });
@@ -213,11 +213,11 @@ export class DiscordGateway {
         console.log(`[Discord GW] Bağlantı kapandı: ${code} ${String(reason)}`);
         this.isConnected = false;
         this.stopHeartbeat();
-        // 4004 = authentication failed (geçersiz token) → yeniden deneme
         if (code === 4004) {
-          console.error('[Discord GW] Token geçersiz (4004), yeniden bağlanma durduruldu');
+          console.error('[Discord GW] Token geçersiz (4004)');
           this.reconnectAttempts = this.maxReconnect;
           this.token = '';
+          this.stopHeartbeat();
           try { this.onAuthFail?.(); } catch {}
           doResolve(false);
           return;
@@ -232,6 +232,11 @@ export class DiscordGateway {
 
       this.ws.on('error', (e) => {
         console.error('[Discord GW] WebSocket hatası:', e.message);
+        // WebSocket hatasında auth fail kontrolü
+        if (this.token && this.ws?.readyState === WebSocket.CLOSED) {
+          console.error('[Discord GW] WebSocket kapatıldı, token kontrol ediliyor');
+          this.onAuthFail?.();
+        }
       });
     });
   }
@@ -267,7 +272,7 @@ export class DiscordGateway {
         console.log('[Discord GW] READY, session:', this.sessionId);
         return;
       }
-      if (d?.seq != null) this.sequence = d.seq;
+if (d?.seq != null) this.sequence = d.seq;
       return;
     }
 
@@ -275,7 +280,10 @@ export class DiscordGateway {
     if (op === 7) {
       console.log('[Discord GW] Reconnect isteği alındı');
       this.stopHeartbeat();
-      if (this.sessionId) {
+      if (this.sessionId && this.lastActivity) {
+        // Reconnect sonrası last activity'yi yeniden gönder
+        this.setActivity(this.lastActivity);
+      } else if (this.sessionId) {
         this.sendResume();
       } else {
         this.sendIdentify();
@@ -345,6 +353,9 @@ export class DiscordGateway {
       console.error('[Discord GW] Bağlı değil, activity ayarlanamadı');
       return;
     }
+
+    this.lastActivity = activity
+    console.log('[Discord GW] Activity set, stored for reconnect');
 
     // Cover resolution: mp:external/ cache + POST external-assets
     if (activity.largeImage && activity.largeImage.startsWith('http')) {

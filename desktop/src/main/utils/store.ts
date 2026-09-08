@@ -15,6 +15,8 @@ interface StoreData {
   oauthClientSecret?: string;
   shuffle: boolean;
   repeat: 'off' | 'all' | 'one';
+  discordToken?: string;
+  discordEnabled?: boolean;
 }
 
 const defaults: StoreData = {
@@ -90,18 +92,20 @@ export class StoreManager {
   }
 
   addToPlaylist(playlistId: string, songId: string): void {
-    const pl = this.get('playlists').find(p => p.id === playlistId);
+    const playlists = this.get('playlists');
+    const pl = playlists.find(p => p.id === playlistId);
     if (pl && !pl.songs.includes(songId)) {
       pl.songs.push(songId);
-      this.set('playlists', this.get('playlists'));
+      this.set('playlists', playlists);
     }
   }
 
   removeFromPlaylist(playlistId: string, songId: string): void {
-    const pl = this.get('playlists').find(p => p.id === playlistId);
+    const playlists = this.get('playlists');
+    const pl = playlists.find(p => p.id === playlistId);
     if (pl) {
       pl.songs = pl.songs.filter(s => s !== songId);
-      this.set('playlists', this.get('playlists'));
+      this.set('playlists', playlists);
     }
   }
 

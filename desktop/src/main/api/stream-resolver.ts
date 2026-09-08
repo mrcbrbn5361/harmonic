@@ -235,10 +235,6 @@ export class StreamResolver {
       }
     } else if (this._wasAd) {
       this._wasAd = false;
-      // Reklam bitti — kaydedilen konuma geri dön
-      if (this._adPosition > 0 && u.currentTime < this._adPosition) {
-        this.seek(this._adPosition).catch(() => {});
-      }
       this._adPosition = 0;
     }
     for (const cb of this.listeners) {
@@ -621,20 +617,12 @@ export class StreamResolver {
     try {
       await win.webContents.executeJavaScript(
         `(() => {
-          // YouTube'un "Skip Ad" / "Reklamı Geç" butonunu bul ve tıkla
-          const btns = document.querySelectorAll('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, [class*="skip"], button.ytp-button');
-          for (const b of btns) {
-            const txt = (b.textContent || '').toLowerCase();
-            if (txt.includes('skip') || txt.includes('geç') || txt.includes('atla') || b.classList.toString().includes('skip')) {
-              b.click();
-              return true;
-            }
-          }
-          // movie_player API üzerinden dene
-          const mp = document.getElementById('movie_player');
-          if (mp && typeof mp.getOption === 'function') {
-            try { mp.skipAd(); } catch {}
-          }
+          const selectors=['.ytp-ad-skip-button','.ytp-ad-skip-button-modern','.ytp-skip-ad-button','[aria-label*="Skip" i]','[aria-label*="Geç" i]','[aria-label*="Atla" i]'];
+          for(const s of selectors){ const b=document.querySelector(s); if(b){ b.click(); return true; } }
+          const btns=document.querySelectorAll('button, [role="button"]');
+          for(const b of btns){ const t=(b.textContent||'').toLowerCase(); if(t.includes('skip')||t.includes('geç')||t.includes('atla')){ b.click(); return true; } }
+          const v=document.querySelector('video'); if(v && v.duration) { try{ v.currentTime=v.duration; v.pause(); }catch{} return true; }
+          const mp=document.getElementById('movie_player'); if(mp){ try{ mp.stopVideo(); }catch{} try{ mp.skipAd(); }catch{} }
           return false;
         })()`,
         true

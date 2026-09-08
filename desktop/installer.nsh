@@ -1,9 +1,18 @@
-; ============================================
 ; Harmonic - NSIS Installer Include
-; Varsayılan kurulum dizini: %LOCALAPPDATA%\Harmonic
-; ============================================
-
+; Lisans butonları electron-builder'ın Turkish.nlf çevirisini kullanır — custom LicenseText kaldırıldı
 !macro customInit
-  ; %LOCALAPPDATA% fallback ile güvenli kurulum dizini
   StrCpy $INSTDIR "$LOCALAPPDATA\Harmonic"
+  SetShellVarContext current
+!macroend
+!macro customInstall
+  CreateShortCut "$SMPROGRAMS\Harmonic.lnk" "$INSTDIR\Harmonic.exe" "" "$INSTDIR\resources\assets\icon.ico"
+!macroend
+!macro customUnInstall
+  RMDir /r "$APPDATA\Harmonic"
+  RMDir /r "$TEMP\harmonic-chrome-profile"
+  Delete "$INSTDIR\Uninstall Harmonic.exe"
+  RMDir "$INSTDIR"
+  Delete "$DESKTOP\Harmonic.lnk"
+  Delete "$SMPROGRAMS\Harmonic.lnk"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Harmonic"
 !macroend

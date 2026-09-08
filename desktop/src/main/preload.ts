@@ -74,6 +74,14 @@ const api = {
     gwIsReady: () => ipcRenderer.invoke('discord:gwIsReady'),
   },
 
+  authClients: {
+    list: () => ipcRenderer.invoke('auth:clients'),
+    create: (d:any) => ipcRenderer.invoke('auth:createClient', d),
+    revoke: (id:string) => ipcRenderer.invoke('auth:revokeClient', id),
+  },
+  volumeRatio: { isEnabled: () => ipcRenderer.invoke('volumeRatio:isEnabled'), setEnabled: (v:boolean) => ipcRenderer.invoke('volumeRatio:setEnabled', v) },
+  lyrics: { isEnabled: () => ipcRenderer.invoke('lyrics:isEnabled'), setEnabled: (v:boolean) => ipcRenderer.invoke('lyrics:setEnabled', v) },
+
   // Yeni: playback IPC'leri (gizli pencere üzerinden)
   player: {
     pause: () => ipcRenderer.invoke('player:pause'),

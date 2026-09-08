@@ -216,11 +216,17 @@
         userInfo.style.display = 'flex';
         if (userName) userName.textContent = state.user.name;
         if (userEmail) userEmail.textContent = state.user.email;
-        if (userAvatar && state.user.picture) {
-          userAvatar.style.backgroundImage = `url(${state.user.picture})`;
-          if (avatarText) avatarText.style.display = 'none';
-        } else if (avatarText && state.user.name) {
-          avatarText.textContent = state.user.name.charAt(0).toUpperCase();
+        if (userAvatar) {
+          if (state.user.picture) {
+            userAvatar.style.backgroundImage = `url("${state.user.picture}")`;
+            userAvatar.style.backgroundColor = 'transparent';
+            userAvatar.textContent = '';
+            if (avatarText) avatarText.style.display = 'none';
+          } else if (avatarText && state.user.name) {
+            userAvatar.style.backgroundImage = 'none';
+            avatarText.style.display = 'block';
+            avatarText.textContent = state.user.name.charAt(0).toUpperCase();
+          }
         }
       }
     } else {
@@ -244,31 +250,23 @@
           showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
           return;
         }
-        showChromeImportPrompt();
+        showChromeImportPrompt(opened);
       });
     }
 
     if (openLoginBtn) {
       openLoginBtn.addEventListener('click', async () => {
-        showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
         const opened = await api.auth.loginMusic();
-        if (!opened?.opened) {
-          showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
-          return;
-        }
-        showChromeImportPrompt();
+        if (!opened?.opened) { showToast(`Chrome açılamadı: ${opened?.error || ''}`, 'error'); }
+        showChromeImportPrompt(opened);
       });
     }
 
     if (startWelcomeBtn) {
       startWelcomeBtn.addEventListener('click', async () => {
-        showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
         const opened = await api.auth.loginMusic();
-        if (!opened?.opened) {
-          showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
-          return;
-        }
-        showChromeImportPrompt();
+        if (!opened?.opened) { showToast(`Chrome açılamadı: ${opened?.error || ''}`, 'error'); }
+        showChromeImportPrompt(opened);
       });
     }
 
@@ -283,35 +281,28 @@
     }
   }
 
-  // Chrome'dan giriş aktarım modalı
-  function showChromeImportPrompt() {
+  // Chrome'dan giriş aktarım modalı — link + hesap seçimi (çoklu Chrome/hesap destekli)
+  function showChromeImportPrompt(opened: any) {
     const existing = document.getElementById('chromeImportModal');
     if (existing) existing.remove();
-
+    const loginUrl = opened?.url || 'https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com%2F';
     const modal = document.createElement('div');
     modal.id = 'chromeImportModal';
     modal.className = 'modal-overlay visible';
     modal.innerHTML = `
-      <div class="modal" style="max-width:480px">
+      <div class="modal" style="max-width:520px">
         <div class="modal-header">
-          <h3 style="display:flex;align-items:center;gap:8px">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M12 8v4M12 16h.01"/>
-            </svg>
-            Chrome'da Giriş Yapın
-          </h3>
-          <button class="icon-btn" id="closeChromeImport">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
+          <h3 style="display:flex;align-items:center;gap:8px">Chrome'da Giriş Yapın</h3>
+          <button class="icon-btn" id="closeChromeImport"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div class="modal-body" style="padding:16px 20px">
-          <p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">
-            <strong>1.</strong> Açılan Chrome penceresinde Google hesabınızla YouTube Music'e giriş yapın.<br>
-            <strong>2.</strong> YouTube Music ana sayfası yüklendikten sonra aşağıdaki <strong>Girişi Aktar</strong>'a basın.<br>
-            <strong>3.</strong> Chrome penceresini kapatabilirsiniz.
-          </p>
-          <div id="importStatus" style="margin-top:12px;padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px"></div>
+          <p style="margin:0 0 10px;color:var(--c-text-1);line-height:1.5">Aşağıdaki linki <strong>istediğin Chrome profilinde</strong> aç, giriş yap, sonra Girişi Aktar'a bas. Birden fazla hesap varsa YouTube Music'te hesap değiştirip istediğini seç.</p>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+            <input readonly value="${escapeHtml(loginUrl)}" style="flex:1;background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:8px;color:var(--c-text-1);font-size:12px">
+            <button class="btn btn-ghost" id="copyLoginUrl">Kopyala</button>
+            <button class="btn btn-primary" id="openLoginUrl">Aç</button>
+          </div>
+          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px"></div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" id="cancelChromeImport">İptal</button>
@@ -324,6 +315,8 @@
     const close = () => modal.remove();
     modal.querySelector('#closeChromeImport')?.addEventListener('click', close);
     modal.querySelector('#cancelChromeImport')?.addEventListener('click', close);
+    modal.querySelector('#copyLoginUrl')?.addEventListener('click', () => { navigator.clipboard.writeText(loginUrl); showToast('Link kopyalandı', 'success'); });
+    modal.querySelector('#openLoginUrl')?.addEventListener('click', () => (api as any).shell.openExternal(loginUrl));
 
     modal.querySelector('#doChromeImport')?.addEventListener('click', async () => {
       const status = modal.querySelector('#importStatus') as HTMLElement;
@@ -895,7 +888,8 @@
     };
     if (state.duration > 0) payload.endTimestamp = start + Math.round(state.duration * 1000);
     if (coverUrl) payload.coverUrl = coverUrl;
-    if (album) payload.largeImageText = album;
+    // ytmdesktop2: large_text her zaman album/title olmalı, yoksa hover eski kalıyor
+    (payload as any).largeImageText = album || title;
     // YouTube Music'te Aç butonu
     if (key && key.length === 11) {
       (payload as any).buttons = [{ label: "YouTube Music'te Aç", url: `https://music.youtube.com/watch?v=${key}` }];
@@ -1319,15 +1313,8 @@ function updatePlayIcon() {
 
     let html = '';
 
-    if (songs.length) {
-      html += `<div style="margin-bottom:32px">
-        <h2 style="font-size:18px;font-weight:700;margin-bottom:16px;color:var(--c-text-0)">Önerilen Şarkılar</h2>
-        <div class="song-list">${songs.slice(0, 10).map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div>
-      </div>`;
-    }
-
     if (cards.length) {
-      html += `<div>
+      html += `<div style="margin-bottom:32px">
         <h2 style="font-size:18px;font-weight:700;margin-bottom:16px;color:var(--c-text-0)">Keşfet</h2>
         <div class="card-grid">${cards.slice(0, 8).map((c: any) => `
           <div class="card" data-browse="${c.browseId}" style="cursor:pointer">
@@ -1335,6 +1322,13 @@ function updatePlayIcon() {
             <div class="card-title">${c.title || c.name || ''}</div>
             <div class="card-sub">${c.artist || ''}</div>
           </div>`).join('')}</div>
+      </div>`;
+    }
+
+    if (songs.length) {
+      html += `<div>
+        <h2 style="font-size:18px;font-weight:700;margin-bottom:16px;color:var(--c-text-0)">Önerilen Şarkılar</h2>
+        <div class="song-list">${songs.slice(0, 10).map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div>
       </div>`;
     }
 
@@ -1347,34 +1341,43 @@ function updatePlayIcon() {
 
     attachSongEvents(container);
 
-    // Kartlara tıklama özelliği ekle
+    // Kartlara tıklama → listenin içine gir
     container.querySelectorAll('.card[data-browse]').forEach((card) => {
       card.addEventListener('click', async () => {
         const browseId = (card as HTMLElement).dataset.browse;
         if (!browseId) return;
-        
-        // Yükleniyor göster
-        const songListContainer = document.createElement('div');
-        songListContainer.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Şarkılar yükleniyor...</p></div>';
-        card.parentElement?.appendChild(songListContainer);
-        
+        container.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
         try {
           const browseData = await (window as any).api.youtube.browse(browseId);
-          if (browseData.items?.length) {
-            const browseSongs = browseData.items.filter((i: any) => i.id) as Song[];
-            if (browseSongs.length) {
-              songListContainer.innerHTML = `<div style="margin-top:16px">
-                <h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">${browseData.title || 'Şarkılar'}</h3>
-                <div class="song-list">${browseSongs.map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div>
-              </div>`;
-              attachSongEvents(songListContainer);
-              
-              // Queue'yu güncelle
-              setContext(browseSongs, browseData.title || 'Şarkılar', 'playlist');
-            }
+          const items: any[] = browseData.items || [];
+          const songs = items.filter((i: any) => i.id) as Song[];
+          const title = browseData.title || (card as HTMLElement).querySelector('.card-title')?.textContent || 'Liste';
+          const thumb = (card as HTMLElement).querySelector('img')?.src || '';
+          let html = `<button id="backToHome" class="btn btn-ghost" style="margin-bottom:16px">← Geri</button>
+            <div style="display:flex;gap:16px;align-items:center;margin-bottom:20px">
+              ${thumb ? `<img src="${thumb}" style="width:96px;height:96px;border-radius:12px;object-fit:cover">` : ''}
+              <h2 style="font-size:22px;font-weight:700">${escapeHtml(title)}</h2>
+            </div>`;
+          if (songs.length) {
+            html += `<div class="song-list">${songs.map((s, i) => songRow(s, i+1)).join('')}</div>`;
+            setContext(songs, title, 'playlist');
+          } else if (items.length) {
+            const cards = items.filter((i:any)=>i.browseId);
+            html += `<div class="card-grid">${cards.map((c:any)=>`
+              <div class="card" data-browse="${c.browseId}"><img class="card-thumb" src="${c.thumbnail}" alt=""><div class="card-title">${escapeHtml(c.title||c.name||'')}</div></div>`).join('')}</div>`;
+          } else {
+            html += `<div class="empty-state"><p class="empty-text">İçerik bulunamadı</p></div>`;
           }
-        } catch (err) {
-          songListContainer.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p></div>';
+          container.innerHTML = html;
+          attachSongEvents(container);
+          container.querySelector('#backToHome')?.addEventListener('click', () => loadHome());
+          // içerdeki alt kartlar da aynı şekilde girsin
+          container.querySelectorAll('.card[data-browse]').forEach((c2) => {
+            c2.addEventListener('click', () => (card as HTMLElement).click());
+          });
+        } catch {
+          container.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p></div><button id="backToHome" class="btn btn-ghost">← Geri</button>';
+          container.querySelector('#backToHome')?.addEventListener('click', () => loadHome());
         }
       });
     });
@@ -1726,11 +1729,30 @@ function updatePlayIcon() {
     } catch {}
   }
 
+  function setupVolumeLyricsAuthUI(){
+    const vr=(document.getElementById('volumeRatioEnabled') as HTMLInputElement); const ly=(document.getElementById('lyricsEnabled') as HTMLInputElement);
+    if(vr){ (api as any).volumeRatio.isEnabled().then((v:boolean)=>vr.checked=!!v); vr.addEventListener('change',()=> (api as any).volumeRatio.setEnabled(vr.checked)); }
+    if(ly){ (api as any).lyrics.isEnabled().then((v:boolean)=>ly.checked=v!==false); ly.addEventListener('change',()=> (api as any).lyrics.setEnabled(ly.checked)); }
+    const listEl=document.getElementById('authClientsList'); const aId=document.getElementById('authAppId') as HTMLInputElement; const aName=document.getElementById('authAppName') as HTMLInputElement; const btn=document.getElementById('authCreateBtn');
+    async function refresh(){ if(!listEl) return; const cs:any[]=await (api as any).authClients.list(); listEl.innerHTML= cs.length? cs.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--c-border)"><span>${escapeHtml(c.appName)} (${escapeHtml(c.appId)})</span><button data-revoke="${escapeHtml(c.appId)}" style="color:var(--c-error)">Sil</button></div>`).join('') : '<em>Henüz bağlı uygulama yok</em>'; listEl.querySelectorAll('[data-revoke]').forEach(b=> b.addEventListener('click', async()=>{ await (api as any).authClients.revoke((b as HTMLElement).dataset.revoke!); refresh(); })); }
+    refresh(); btn?.addEventListener('click', async()=>{ if(!aId.value||!aName.value) return showToast('appId ve ad gerekli','warning'); await (api as any).authClients.create({appId:aId.value, appName:aName.value}); aId.value=''; aName.value=''; refresh(); showToast('İstemci eklendi','success'); });
+  }
   function setupDiscordGateway() {
+    const enabledToggle = $('#discordEnabled') as HTMLInputElement;
+    const buttonsToggle = $('#discordButtons') as HTMLInputElement;
+    const thumbsToggle = $('#discordThumbnails') as HTMLInputElement;
     const tokenInput = $('#discordTokenInput') as HTMLInputElement;
     const connectBtn = $('#btnDiscordGwConnect');
     const disconnectBtn = $('#btnDiscordGwDisconnect');
     const statusEl = $('#discordConnectionStatus');
+
+    // ytmdesktop2 referans: discord.enabled / buttons / thumbnails
+    api.store.get('discordEnabled').then((v: any) => { if (v !== undefined) enabledToggle.checked = !!v; });
+    api.store.get('discordButtons').then((v: any) => { if (v !== undefined) buttonsToggle.checked = !!v; });
+    api.store.get('discordThumbnails').then((v: any) => { if (v !== undefined) thumbsToggle.checked = !!v; });
+    enabledToggle.addEventListener('change', () => { api.store.set('discordEnabled', enabledToggle.checked); if (!enabledToggle.checked) { api.discord.clearActivity().catch(()=>{}); statusEl.textContent = 'Kapalı'; } });
+    buttonsToggle.addEventListener('change', () => api.store.set('discordButtons', buttonsToggle.checked));
+    thumbsToggle.addEventListener('change', () => api.store.set('discordThumbnails', thumbsToggle.checked));
 
     // Kayıtlı token'ı yükle
     api.store.get('discordToken').then((t: string) => {
@@ -1804,6 +1826,7 @@ function updatePlayIcon() {
     setupSettings();
     setupAuth();
     setupDiscordGateway();
+    setupVolumeLyricsAuthUI();
     setupKeyboardShortcuts();
     setupMediaSession();
     setupLibraryTabs();
