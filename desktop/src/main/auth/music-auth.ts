@@ -173,35 +173,17 @@ export class MusicAuth {
   //    (kullanıcının ana Chrome'una dokunmaz, giriş yapması gerekir)
   // 2) "Girişi Aktar" — CDP üzerinden cookie'leri çekip Electron session'a yazar
   getLoginUrl(): string { return 'https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com%2F'; }
-  // Açık Chrome'daki YouTube Music'i CDP ile bulup hesap listesini çekmeyi dener (PID 12028 gibi)
-  async listExternalAccounts(): Promise<Array<{name:string; email:string}>> {
-    const ports=[9222,9333,9243];
-    for(const port of ports){
-      try{
-        const res=await fetch(`http://127.0.0.1:${port}/json`, { signal:AbortSignal.timeout(800)} as any);
-        const targets:any[]=await res.json() as any;
-        const yt=(targ:any)=> (targ.url||'').includes('music.youtube.com')|| (targ.url||'').includes('youtube.com');
-        const yts=targets.filter(yt);
-        if(!yts.length) continue;
-        // CDP üzerinden hesap listesini evaluate et
-        // @ts-ignore
-        const CDPmod = await import('chrome-remote-interface').then(m=>m.default||m);
-        const client:any=await CDPmod({ host:'127.0.0.1', port });
-        const { Runtime } = client;
-        await Runtime.enable();
-        const evalRes=await Runtime.evaluate({ expression:`(() => { try{ const h=document.documentElement.innerHTML; const accs=[...h.matchAll(/"accountName":\\s*\\{[^}]*"simpleText":\\s*"([^"]+)"/g)].map(m=>m[1]); const mails=[...h.matchAll(/"accountEmail":\\s*\\{[^}]*"simpleText":\\s*"([^"]+)"/g)].map(m=>m[1]); return JSON.stringify(accs.map((n,i)=>({name:n,email:mails[i]||''})))}catch(e){return '[]'} })()`, returnByValue:true });
-        try{ await client.close(); }catch{}
-        const list=JSON.parse(evalRes.result?.value||'[]');
-        if(list.length) return list;
-      }catch{}
-    }
-    return [];
+  async hasExternalYouTubeMusic(): Promise<boolean> {
+    try{
+      const { execSync } = await import('child_process');
+      const out=execSync('tasklist /FI "IMAGENAME eq chrome.exe" /V 2>nul', { encoding:'utf8' });
+      return out.includes('YouTube Music');
+    }catch{ return false; }
   }
-  async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean; url?: string; externalAccounts?: Array<{name:string;email:string}> }> {
-    // Önce harici Chrome'da YT Music var mı diye bak
-    const extAccs=await this.listExternalAccounts().catch(()=>[]);
-    if(extAccs.length){
-      return { opened:true, alreadyRunning:true, url:this.getLoginUrl(), externalAccounts: extAccs };
+  async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean; url?: string; externalFound?: boolean }> {
+    const hasExt=await this.hasExternalYouTubeMusic().catch(()=>false);
+    if(hasExt){
+      return { opened:true, alreadyRunning:true, url:this.getLoginUrl(), externalFound:true };
     }
     try {
       if (this.loginWindow && !this.loginWindow.isDestroyed()) { this.loginWindow.focus(); return { opened:true, alreadyRunning:true, url:this.getLoginUrl() }; }

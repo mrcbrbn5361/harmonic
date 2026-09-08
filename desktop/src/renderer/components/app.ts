@@ -284,8 +284,7 @@
   function showChromeImportPrompt(opened: any) {
     const existing = document.getElementById('chromeImportModal');
     if (existing) existing.remove();
-    const hasExt = opened?.externalAccounts?.length>0;
-    const accList = hasExt ? opened.externalAccounts.map((a:any)=> `<label style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:6px;background:var(--c-bg-3);margin-bottom:6px;cursor:pointer"><input type="radio" name="extAcc" value="${escapeHtml(a.name)}"> <span>${escapeHtml(a.name)}${a.email? ' — '+escapeHtml(a.email):''}</span></label>`).join('') : '';
+    const hasExt = !!opened?.externalFound;
     const modal = document.createElement('div');
     modal.id = 'chromeImportModal';
     modal.className = 'modal-overlay visible';
@@ -296,8 +295,8 @@
           <button class="icon-btn" id="closeChromeImport"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div class="modal-body" style="padding:16px 20px">
-          ${hasExt? `<p style="margin:0 0 10px;color:var(--c-text-1)">Chrome'da açık olan (PID 12028) YouTube Music hesabı bulundu. Birini seçip devam et — seçili hesabın cookie'leri aktarılacak.</p><div style="max-height:160px;overflow:auto;margin-bottom:10px">${accList}</div>` : `<p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Ayrı bir <strong>YouTube Music giriş penceresi</strong> açıldı. Orada hesabınla giriş yap, ana sayfa yüklenince <strong>Girişi Aktar</strong>'a bas.</p>`}
-          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">${hasExt?'Hesap seçin':'Pencere açık, giriş bekleniyor...'}</div>
+          ${hasExt? `<div style="padding:10px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);margin-bottom:10px"><p style="margin:0;color:var(--c-text-1)"><strong>Zaten YouTube Music açık</strong> (Chrome PID 12028). Lütfen o tarayıcıda <strong>YouTube Music → sağ üst profil → Hesap değiştir</strong> ile istediğin hesaba geç, sonra buraya dönüp <strong>Girişi Aktar</strong>'a bas. Ayrı şifre ekranı açılmayacak.</p></div><p style="margin:0 0 8px;color:var(--c-text-2);font-size:12px">Not: İlk seferinde Harmonic giriş penceresi yerine mevcut Chrome'un kullanılacak, bu yüzden yeni şifre sormaz.</p>` : `<p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Ayrı bir <strong>YouTube Music giriş penceresi</strong> açıldı. Orada hesabınla giriş yap, ana sayfa yüklenince <strong>Girişi Aktar</strong>'a bas.</p>`}
+          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">${hasExt?'Harici Chrome hesabı bekleniyor...':'Pencere açık, giriş bekleniyor...'}</div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" id="cancelChromeImport">İptal</button>
