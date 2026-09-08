@@ -281,28 +281,21 @@
     }
   }
 
-  // Chrome'dan giriş aktarım modalı — link + hesap seçimi (çoklu Chrome/hesap destekli)
   function showChromeImportPrompt(opened: any) {
     const existing = document.getElementById('chromeImportModal');
     if (existing) existing.remove();
-    const loginUrl = opened?.url || 'https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fmusic.youtube.com%2F';
     const modal = document.createElement('div');
     modal.id = 'chromeImportModal';
     modal.className = 'modal-overlay visible';
     modal.innerHTML = `
-      <div class="modal" style="max-width:520px">
+      <div class="modal" style="max-width:480px">
         <div class="modal-header">
-          <h3 style="display:flex;align-items:center;gap:8px">Chrome'da Giriş Yapın</h3>
+          <h3>Harmonic Giriş Penceresi Açıldı</h3>
           <button class="icon-btn" id="closeChromeImport"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div class="modal-body" style="padding:16px 20px">
-          <p style="margin:0 0 10px;color:var(--c-text-1);line-height:1.5">Aşağıdaki linki <strong>istediğin Chrome profilinde</strong> aç, giriş yap, sonra Girişi Aktar'a bas. Birden fazla hesap varsa YouTube Music'te hesap değiştirip istediğini seç.</p>
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-            <input readonly value="${escapeHtml(loginUrl)}" style="flex:1;background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:8px;color:var(--c-text-1);font-size:12px">
-            <button class="btn btn-ghost" id="copyLoginUrl">Kopyala</button>
-            <button class="btn btn-primary" id="openLoginUrl">Aç</button>
-          </div>
-          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px"></div>
+          <p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Ayrı bir <strong>YouTube Music giriş penceresi</strong> açıldı. Orada hesabınla giriş yap, YouTube Music ana sayfası yüklenince buraya dönüp <strong>Girişi Aktar</strong>'a bas. Hesap bilgilerin (isim, e-posta, foto) otomatik çekilecek.</p>
+          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">Pencere açık, giriş bekleniyor...</div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" id="cancelChromeImport">İptal</button>
@@ -315,37 +308,21 @@
     const close = () => modal.remove();
     modal.querySelector('#closeChromeImport')?.addEventListener('click', close);
     modal.querySelector('#cancelChromeImport')?.addEventListener('click', close);
-    modal.querySelector('#copyLoginUrl')?.addEventListener('click', () => { navigator.clipboard.writeText(loginUrl); showToast('Link kopyalandı', 'success'); });
-    modal.querySelector('#openLoginUrl')?.addEventListener('click', () => (api as any).shell.openExternal(loginUrl));
 
     modal.querySelector('#doChromeImport')?.addEventListener('click', async () => {
       const status = modal.querySelector('#importStatus') as HTMLElement;
       const btn = modal.querySelector('#doChromeImport') as HTMLButtonElement;
-      btn.disabled = true;
-      btn.textContent = 'Aktarılıyor...';
-      status.textContent = 'Chrome\'un cookie\'leri okunuyor...';
-      status.style.color = 'var(--c-text-2)';
+      btn.disabled = true; btn.textContent = 'Aktarılıyor...'; status.textContent = 'Hesap doğrulanıyor...';
       try {
         const r = await api.auth.importFromChrome();
         if (r?.success) {
-          status.textContent = `${r.cookies} cookie aktarıldı! Artık şarkılar çalınabilir.`;
-          status.style.color = 'var(--c-success, #4ade80)';
-          state.isLoggedIn = true;
-          state.user = await api.auth.getMusicUser();
-          updateAuthUI();
-          setTimeout(close, 1800);
-        } else {
-          status.textContent = `Hata: ${r?.error || 'Chrome\'da giriş yapılmamış olabilir'}`;
-          status.style.color = 'var(--c-error, #f87171)';
-          btn.disabled = false;
-          btn.textContent = 'Tekrar Dene';
-        }
-      } catch (e: any) {
-        status.textContent = `Hata: ${e?.message || String(e)}`;
-        status.style.color = 'var(--c-error, #f87171)';
-        btn.disabled = false;
-        btn.textContent = 'Tekrar Dene';
-      }
+          state.isLoggedIn = true; state.user = await api.auth.getMusicUser(); updateAuthUI();
+          status.textContent = `${state.user?.name || 'Giriş'} olarak giriş yapıldı (${r.cookies} cookie)`;
+          status.style.color = 'var(--c-success)';
+          await checkAuthState(); updateAuthUI(); loadHome();
+          setTimeout(close, 1500);
+        } else { status.textContent = `Hata: ${r?.error || 'Pencerede giriş yapılmamış'}`; status.style.color = 'var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
+      } catch(e:any){ status.textContent=`Hata: ${e?.message||String(e)}`; status.style.color='var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
     });
   }
 

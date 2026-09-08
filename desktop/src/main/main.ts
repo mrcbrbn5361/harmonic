@@ -452,13 +452,13 @@ app.whenReady().then(async () => {
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on('checking-for-update', () => console.log('[Auto] Checking...'));
-  autoUpdater.on('update-available', (info: any) => { console.log('[Auto] Available:', info.version); mainWindow?.webContents.send('auto:update-available', info); });
-  autoUpdater.on('update-not-available', () => console.log('[Auto] Not available'));
-  autoUpdater.on('error', (err: any) => { console.error('[Auto] Error:', err); dialog.showErrorBox('Güncelleme Hatası', String(err?.message || err)); });
-  autoUpdater.on('download-progress', (p: any) => mainWindow?.webContents.send('auto:download-progress', p));
-  autoUpdater.on('update-downloaded', (info: any) => { console.log('[Auto] Downloaded:', info.version); mainWindow?.webContents.send('auto:update-downloaded', info); });
-  autoUpdater.checkForUpdatesAndNotify().catch(()=>{});
+  autoUpdater.on('error', (err: any) => { console.warn('[Auto] Update check skipped:', err?.message||err); });
+  // GitHub'da release yokken hata popup'ı gösterme
+  if (process.env.GH_TOKEN || require('fs').existsSync(require('path').join(__dirname,'../release'))) {
+    autoUpdater.checkForUpdatesAndNotify().catch(()=>{});
+  } else {
+    console.log('[Auto] Update check disabled - no releases');
+  }
 
   setupIPC();
   createWindow();
