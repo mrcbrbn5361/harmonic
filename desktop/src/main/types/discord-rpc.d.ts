@@ -5,6 +5,7 @@ declare module 'discord-rpc' {
     setActivity(activity: {
       details?: string;
       state?: string;
+      type?: number;
       largeImageKey?: string;
       largeImageText?: string;
       smallImageKey?: string;
@@ -12,6 +13,7 @@ declare module 'discord-rpc' {
       startTimestamp?: number;
       endTimestamp?: number;
       instance?: boolean;
+      buttons?: Array<{ label: string; url: string }>;
     }): Promise<void>;
     clearActivity(): Promise<void>;
     destroy(): void;

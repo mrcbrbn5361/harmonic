@@ -69,9 +69,12 @@ const api = {
       buttons?: Array<{ label: string; url: string }>;
     }) => ipcRenderer.invoke('discord:setActivity', data),
     clearActivity: () => ipcRenderer.invoke('discord:clearActivity'),
-    gwConnect: (token: string) => ipcRenderer.invoke('discord:gwConnect', token),
-    gwDisconnect: () => ipcRenderer.invoke('discord:gwDisconnect'),
-    gwIsReady: () => ipcRenderer.invoke('discord:gwIsReady'),
+  },
+
+  discordAuth: {
+    login: () => ipcRenderer.invoke('discord:login'),
+    logout: () => ipcRenderer.invoke('discord:logout'),
+    getUser: () => ipcRenderer.invoke('discord:getUser'),
   },
 
   authClients: {

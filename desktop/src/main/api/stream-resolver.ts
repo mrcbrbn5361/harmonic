@@ -1,13 +1,32 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, session } from 'electron';
 import { MUSIC_PARTITION, CHROME_UA } from '../auth/music-auth';
 
 // ── Gizli oynatıcı (artık tüm playback buradan) ─
 // YouTube Music watch sayfasını gizli bir pencerede açarız.
-// Ses AÇIK: kullanıcı reklam dahil tüm sesleri buradan duyar.
 // Ana renderer'ın <audio> elementi yok — sadece metadata + kontrol IPC'si.
+// Reklamlar: ağ seviyesinde bloklanır, kaçan olursa sessize alınıp anında geçilir.
 
 const WATCH_URL = 'https://music.youtube.com/watch?v=';
 const POLL_MS = 800;
+
+// Reklam/takipçi domainleri — ağ seviyesinde iptal edilir (oynatma/APi etkilenmez)
+const AD_BLOCK_PATTERNS = [
+  '*://*.doubleclick.net/*',
+  '*://*.googleadservices.com/*',
+  '*://*.googlesyndication.com/*',
+  '*://*.googletagservices.com/*',
+  '*://*.2mdn.net/*',
+  '*://*.moatads.com/*',
+  '*://adservice.google.*/*',
+  '*://*.youtube-nocookie.com/*',
+  '*://*.youtube.com/pagead/*',
+  '*://music.youtube.com/pagead/*',
+  '*://*.youtube.com/api/stats/ads*',
+  '*://*.google.com/pagead/*'
+];
+
+// Gizli pencerede reklam overlay'lerini gizle (yedek katman)
+const ADHIDE_CSS = '.ytp-ad-player-overlay,.ytp-ad-text,.ytp-ad-skip-button-container,.ytp-ad-message-container,.ytp-ad-image-overlay,#player-ads,.ytp-ad-module,.ytp-ad-overlay-container{display:none!important}';
 
 interface PlaybackUpdate {
   videoId: string;
@@ -19,6 +38,8 @@ interface PlaybackUpdate {
   paused: boolean;
   isAd: boolean;
   src: string;
+  // YT player durumu: -1 başlamadı, 0 bitti, 1 oynuyor, 2 duraklatıldı, 3 tamponlanıyor
+  playerState?: number;
 }
 
 type UpdateListener = (u: PlaybackUpdate) => void;
@@ -188,6 +209,24 @@ export class StreamResolver {
   private _wasAd = false;
   private _destroyed = false;
 
+  constructor() {
+    this.installAdblock();
+  }
+
+  // Reklam domainlerini session seviyesinde engelle (login/gizli pencere dahil hepsi etkilenir)
+  private adblockInstalled = false;
+  private installAdblock(): void {
+    if (this.adblockInstalled) return;
+    this.adblockInstalled = true;
+    try {
+      const ses = session.fromPartition(MUSIC_PARTITION);
+      ses.webRequest.onBeforeRequest({ urls: AD_BLOCK_PATTERNS }, (_details, cb) => cb({ cancel: true }));
+      console.log('[Adblock] Reklam domain blokajı aktif');
+    } catch (e: any) {
+      console.error('[Adblock] Kurulum hatası:', e?.message || e);
+    }
+  }
+
   // Pencereyi oluştur veya var olanı döndür
   private ensureWindow(): BrowserWindow {
     if (this._destroyed) throw new Error('StreamResolver has been destroyed');
@@ -210,6 +249,13 @@ export class StreamResolver {
     this.win.webContents.setAudioMuted(false);
     this.win.webContents.setUserAgent(CHROME_UA);
     this.win.webContents.on('before-input-event', (e) => e.preventDefault());
+    // Reklam overlay CSS'i (pencere başına bir kez)
+    if (!(this.win as any).__adCssHooked) {
+      (this.win as any).__adCssHooked = true;
+      this.win.webContents.on('dom-ready', () => {
+        try { this.win?.webContents.insertCSS(ADHIDE_CSS).catch(() => {}); } catch {}
+      });
+    }
     // Yükleme bitince metadata çekmeyi dene
     this.win.webContents.on('did-finish-load', () => {
       setTimeout(() => this.pollOnce(), 500);
@@ -227,19 +273,45 @@ export class StreamResolver {
   }
 
   private emit(u: PlaybackUpdate) {
-    // Reklam algılama: reklam başladıysa konumu kaydet, bittiyse geri yükle
+    // Reklam algılama: başlayınca sessize al + anında geç, bitince sesi geri aç
     if (u.isAd) {
       if (!this._wasAd) {
         this._wasAd = true;
         this._adPosition = u.currentTime || 0;
+        this.onAdStart();
       }
     } else if (this._wasAd) {
       this._wasAd = false;
       this._adPosition = 0;
+      this.onAdEnd();
     }
     for (const cb of this.listeners) {
       try { cb(u); } catch {}
     }
+  }
+
+  // Reklam başladı: kullanıcı hiçbir şey duymadan/görmeden geç
+  private onAdStart(): void {
+    try { this.win?.webContents.setAudioMuted(true); } catch {}
+    // Atlama butonu varsa tıkla, yoksa sona sar + 16x hızlandır
+    this.skipAd().catch(() => {});
+    try {
+      this.win?.webContents.executeJavaScript(
+        `(() => { try { const v = document.querySelector('video'); if (v) v.playbackRate = 16; } catch {} try { const mp = document.getElementById('movie_player'); if (mp && mp.setPlaybackRate) mp.setPlaybackRate(16); } catch {} return true; })()`,
+        true
+      ).catch(() => {});
+    } catch {}
+  }
+
+  // Reklam bitti: sesi ve hızı normale döndür
+  private onAdEnd(): void {
+    try { this.win?.webContents.setAudioMuted(false); } catch {}
+    try {
+      this.win?.webContents.executeJavaScript(
+        `(() => { try { const v = document.querySelector('video'); if (v && v.playbackRate !== 1) v.playbackRate = 1; } catch {} try { const mp = document.getElementById('movie_player'); if (mp && mp.setPlaybackRate) mp.setPlaybackRate(1); } catch {} return true; })()`,
+        true
+      ).catch(() => {});
+    } catch {}
   }
 
   // Periyodik metadata çekme
@@ -253,10 +325,12 @@ export class StreamResolver {
     try {
       const st: any = await win.webContents.executeJavaScript(RESOLVE_MEDIA_JS, true);
       if (st && st.ok) {
-        // Emit on paused/time/title/isAd change — metadata gecikmesin
+        // Gerçek çalan id (autoplay/geçiş takibi için) — yoksa istenen id
+        const actualId: string = st.videoId || this.currentVideoId;
+        // Emit on paused/time/title/isAd/videoId/playerState change — metadata ve bitiş gecikmesin
         const lastEmitted = this.lastEmittedState;
-        if (!lastEmitted || lastEmitted.paused !== st.paused || lastEmitted.currentTime !== st.currentTime || lastEmitted.title !== st.title || lastEmitted.isAd !== st.isAd || lastEmitted.duration !== st.duration) {
-          this.lastEmittedState = { ...st };
+        if (!lastEmitted || lastEmitted.paused !== st.paused || lastEmitted.currentTime !== st.currentTime || lastEmitted.title !== st.title || lastEmitted.isAd !== st.isAd || lastEmitted.duration !== st.duration || lastEmitted.videoId !== actualId || lastEmitted.playerState !== st.playerState) {
+          this.lastEmittedState = { ...st, videoId: actualId };
           if (this.userWantsPaused && !st.paused) {
             try {
               await this.execCmd('pause');
@@ -264,7 +338,7 @@ export class StreamResolver {
             } catch {}
           }
           this.emit({
-            videoId: this.currentVideoId,
+            videoId: actualId,
             title: st.title || '',
             artist: st.artist || '',
             thumbnail: st.thumbnail || '',
@@ -272,7 +346,8 @@ export class StreamResolver {
             duration: st.duration || 0,
             paused: !!st.paused,
             isAd: !!st.isAd,
-            src: st.src || ''
+            src: st.src || '',
+            playerState: typeof st.playerState === 'number' ? st.playerState : undefined
           });
         }
       }
@@ -405,6 +480,8 @@ export class StreamResolver {
     for (let i = 0; i < 5; i++) {
       await new Promise((r) => setTimeout(r, 1000));
       if (win.isDestroyed()) return;
+      // Araya daha yeni bir play girdiyse eski şarkıyı kurcalama (kuyruk çakışması)
+      if (this.currentVideoId !== videoId) return;
       if (this.userWantsPaused) break;
       try {
         const alreadyPlaying = await win.webContents.executeJavaScript(
@@ -610,7 +687,7 @@ export class StreamResolver {
     } catch {}
   }
 
-  // Reklamı atla — "Reklamı Geç" butonu 5sn sonra görünür
+  // Reklamı atla — buton varsa tıkla, yoksa sona sar + hızlandır (durdurmadan)
   async skipAd(): Promise<void> {
     const win = this.win;
     if (!win || win.isDestroyed()) return;
@@ -621,8 +698,15 @@ export class StreamResolver {
           for(const s of selectors){ const b=document.querySelector(s); if(b){ b.click(); return true; } }
           const btns=document.querySelectorAll('button, [role="button"]');
           for(const b of btns){ const t=(b.textContent||'').toLowerCase(); if(t.includes('skip')||t.includes('geç')||t.includes('atla')){ b.click(); return true; } }
-          const v=document.querySelector('video'); if(v && v.duration) { try{ v.currentTime=v.duration; v.pause(); }catch{} return true; }
-          const mp=document.getElementById('movie_player'); if(mp){ try{ mp.stopVideo(); }catch{} try{ mp.skipAd(); }catch{} }
+          try {
+            const mp=document.getElementById('movie_player');
+            if(mp && typeof mp.skipAd==='function'){ try{ mp.skipAd(); }catch{} }
+            let dur=0; try{ dur=mp&&mp.getDuration?mp.getDuration():0; }catch{}
+            if(!dur){ const v=document.querySelector('video'); if(v&&v.duration) dur=v.duration; }
+            if(mp&&typeof mp.seekTo==='function'&&dur>0){ mp.seekTo(Math.max(0,dur-0.3),true); return true; }
+            const v=document.querySelector('video');
+            if(v&&v.duration){ v.playbackRate=16; v.currentTime=Math.max(0,v.duration-0.3); v.play().catch(()=>{}); return true; }
+          } catch {}
           return false;
         })()`,
         true

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com data: blob:; media-src 'self' https://*.googlevideo.com https://*.youtube.com blob:; connect-src 'self' https://music.youtube.com https://www.youtube.com https://*.googlevideo.com https://discord.com https://discordapp.com wss://gateway.discord.gg;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://cdn.discordapp.com data: blob:; media-src 'self' https://*.googlevideo.com https://*.youtube.com blob:; connect-src 'self' https://music.youtube.com https://www.youtube.com https://*.googlevideo.com https://discord.com https://discordapp.com wss://gateway.discord.gg;">
   <title>Harmonic</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -281,24 +281,27 @@
               </div>
               <div class="setting-row">
                 <div class="setting-label">
-                  <span class="setting-name">Kullanıcı Token'ı (opsiyonel)</span>
-                  <span class="setting-desc">Gateway ile kapak + buton için, boşsa sadece IPC</span>
-                </div>
-                <div style="display:flex;gap:6px;align-items:center">
-                  <input type="password" id="discordTokenInput" placeholder="Token yapıştırın..." style="background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:6px 10px;color:var(--c-text-1);font-size:12px;width:200px">
-                  <button class="btn btn-ghost" id="btnDiscordGwConnect" style="font-size:11px;padding:5px 10px">Bağlan</button>
-                  <button class="btn btn-ghost" id="btnDiscordGwDisconnect" style="font-size:11px;padding:5px 10px;display:none">Kes</button>
-                </div>
-              </div>
-              <div class="setting-row">
-                <div class="setting-label">
                   <span class="setting-name">Durum</span>
                   <span class="setting-desc">Discord masaüstü uygulaması açıkken otomatik bağlanır</span>
                 </div>
                 <span class="setting-value" id="discordConnectionStatus">—</span>
               </div>
               <div style="margin-top:8px;font-size:11px;color:var(--c-text-3)">
-                <p>Kapalıyken presence durur. Token girilmediyse IPC ile kapaksız çalışır.</p>
+                <p>Presence, bilgisayarında açık olan Discord uygulaması üzerinden çalışır (RPC). Token gerekmez.</p>
+              </div>
+            </div>
+            <div class="settings-group">
+              <h3 class="settings-group-title">Discord Hesabı</h3>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name" id="discordAccountName">Bağlı değil</span>
+                  <span class="setting-desc">Discord ile giriş yap — adın ve avatarın burada görünür</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <img id="discordAvatar" alt="" style="display:none;width:32px;height:32px;border-radius:50%">
+                  <button class="btn btn-ghost" id="btnDiscordLogin" style="font-size:11px;padding:5px 10px">Discord ile Giriş</button>
+                  <button class="btn btn-ghost" id="btnDiscordLogout" style="font-size:11px;padding:5px 10px;display:none">Çıkış</button>
+                </div>
               </div>
             </div>
             <div class="settings-group">

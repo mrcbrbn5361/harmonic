@@ -6,7 +6,8 @@ interface StoreType {
 }
 
 // Discord Application ID — uygulamaya entegre
-// Discord Developer Portal'da "Harmonic" uygulaması için alındı
+// Discord Developer Portal'da "Harmonic Music" uygulaması için alındı
+// (Portal'daki uygulama adı RPC başlığı olarak görünür — "Hermonic Auth" yazıyorsa portalda rename gerekir)
 export const DISCORD_APP_ID = '1545832861435830432';
 
 const store = new Store<StoreType>({ name: 'harmonic-settings', defaults: { discordAppId: '' } });
@@ -65,6 +66,7 @@ export class DiscordRPC {
   async setActivity(data: {
     details: string;
     state: string;
+    type?: number;
     largeImageKey?: string;
     largeImageText?: string;
     smallImageKey?: string;
@@ -77,35 +79,65 @@ export class DiscordRPC {
     if (!this.client || !this.isConnected) return;
 
     try {
-      const payload: Record<string, unknown> = {
+      // Kapak çözümleme (ytmdesktop2 referans: RPC'de external http URL direkt denenir)
+      const cover = (data.coverUrl || data.largeImageKey || '') as string;
+      let largeImage: string | undefined;
+      let largeText: string | undefined;
+      if (cover && cover.startsWith('http')) {
+        largeImage = cover;
+        largeText = data.largeImageText || data.details || 'Harmonic Music';
+      } else if (typeof data.largeImageKey === 'string' && data.largeImageKey && data.largeImageKey !== '?') {
+        largeImage = data.largeImageKey;
+        largeText = data.largeImageText || 'Harmonic Music';
+      } else if (typeof data.coverUrl === 'string' && data.coverUrl) {
+        largeText = data.largeImageText || data.details || 'Harmonic Music';
+      }
+
+      const assets: Record<string, string> = {};
+      if (largeImage) assets.large_image = largeImage;
+      if (largeText) assets.large_text = largeText;
+      if (typeof data.smallImageKey === 'string' && data.smallImageKey && !data.smallImageKey.startsWith('http')) {
+        assets.small_image = data.smallImageKey;
+        assets.small_text = data.smallImageText || '';
+      }
+
+      const activity: Record<string, unknown> = {
+        // 2 = Listening → "Oynuyor" yerine "Dinliyor".
+        // NOT: npm discord-rpc'nin setActivity'si type'ı çöpe attığı için ham gönderilir.
+        type: data.type ?? 2,
         details: data.details,
-        state: data.state,
+        state: data.state || undefined,
         instance: false
       };
-
-      // ytmdesktop2 referans: external http cover'lar gateway'de mp:external'e çevrilir, RPC'de direkt URL denenir
-      const cover = (data.coverUrl || data.largeImageKey || '') as string;
-      if (cover && cover.startsWith('http')) {
-        // discord-rpc external URL'i largeImageKey olarak kabul eder (fallback: logo yoksa Discord ? gösterir)
-        (payload as any).largeImageKey = cover;
-        (payload as any).largeImageText = data.largeImageText || data.details || 'Harmonic';
-      } else if (typeof data.largeImageKey === 'string' && data.largeImageKey && data.largeImageKey !== '?') {
-        (payload as any).largeImageKey = data.largeImageKey;
-        (payload as any).largeImageText = data.largeImageText || 'Harmonic';
-      } else if (typeof data.coverUrl === 'string' && data.coverUrl) {
-        (payload as any).largeImageText = data.largeImageText || data.details || 'Harmonic';
+      if (typeof data.startTimestamp === 'number' || typeof data.endTimestamp === 'number') {
+        const timestamps: Record<string, number> = {};
+        if (typeof data.startTimestamp === 'number') timestamps.start = data.startTimestamp;
+        if (typeof data.endTimestamp === 'number') timestamps.end = data.endTimestamp;
+        activity.timestamps = timestamps;
       }
-
-      if (typeof data.smallImageKey === 'string' && data.smallImageKey && !data.smallImageKey.startsWith('http')) {
-        payload.smallImageKey = data.smallImageKey;
-        payload.smallImageText = data.smallImageText || '';
-      }
-      if (typeof data.startTimestamp === 'number') payload.startTimestamp = data.startTimestamp;
-      if (typeof data.endTimestamp === 'number') payload.endTimestamp = data.endTimestamp;
+      if (Object.keys(assets).length > 0) activity.assets = assets;
       if (data.buttons && data.buttons.length > 0) {
-        payload.buttons = data.buttons.map((b) => ({ label: b.label, url: b.url }));
+        activity.buttons = data.buttons.map((b) => ({ label: b.label, url: b.url }));
       }
-      this.client.setActivity(payload);
+
+      try {
+        await (this.client as any).request('SET_ACTIVITY', { pid: process.pid, activity });
+      } catch (rawErr: any) {
+        // Discord type'ı reddederse klasik yola düş (Oynuyor görünür ama çalışmaya devam eder)
+        console.error('[Discord] Ham activity reddedildi, klasik yola dönülüyor:', rawErr?.message || rawErr);
+        await this.client.setActivity({
+          details: data.details,
+          state: data.state,
+          largeImageKey: largeImage,
+          largeImageText: largeText,
+          smallImageKey: data.smallImageKey,
+          smallImageText: data.smallImageText,
+          startTimestamp: data.startTimestamp,
+          endTimestamp: data.endTimestamp,
+          instance: false,
+          buttons: data.buttons
+        } as any);
+      }
     } catch (err) {
       console.error('[Discord] Activity ayarlanamadı:', err);
     }

@@ -162,6 +162,17 @@
     state.contextName = name;
     state.contextType = type;
     state.queue = rebuildMergedQueue();
+    // Yeni bağlam: eski shuffle sırası geçersiz (Spotify: yeni bağlamda sıra baştan)
+    state.shuffleOrder = [];
+    // queueIndex'i yeni kuyruğa sabitle (çalan şarkı varsa onun konumu)
+    if (state.queue.length === 0) {
+      state.queueIndex = -1;
+    } else if (state.currentSong) {
+      const idx = state.queue.findIndex((s) => s.id === state.currentSong!.id);
+      state.queueIndex = idx !== -1 ? idx : Math.min(Math.max(state.queueIndex, 0), state.queue.length - 1);
+    } else {
+      state.queueIndex = Math.min(Math.max(state.queueIndex, -1), state.queue.length - 1);
+    }
     const ctxEl = $('#playerContext');
     if (ctxEl) ctxEl.textContent = name || '';
   }
@@ -214,11 +225,15 @@
       if (loginBtn) loginBtn.style.display = 'none';
       if (userInfo) {
         userInfo.style.display = 'flex';
-        if (userName) userName.textContent = state.user.name;
+        const displayName = state.user.name && state.user.name.length > 1 ? state.user.name : (state.user.email ? state.user.email.split('@')[0] : state.user.name);
+        if (userName) userName.textContent = displayName;
         if (userEmail) userEmail.textContent = state.user.email;
         if (userAvatar) {
           if (state.user.picture) {
-            userAvatar.style.backgroundImage = `url("${state.user.picture}")`;
+            const hiRes = state.user.picture.replace(/=s\d+/, '=s200').replace(/=w\d+.*/, '=s200-c-k-c0x00ffffff-no-rj');
+            userAvatar.style.backgroundImage = `url("${hiRes}")`;
+            userAvatar.style.backgroundSize = 'cover';
+            userAvatar.style.backgroundPosition = 'center';
             userAvatar.style.backgroundColor = 'transparent';
             userAvatar.textContent = '';
             if (avatarText) avatarText.style.display = 'none';
@@ -710,20 +725,90 @@
     api.player.setVolume(Math.max(0, Math.min(100, state.volume)) / 100).catch(() => {});
 
     // Gizli pencereden gelen metadata + playback state
-    let _adNotified = false;
     let _lastPollPlaying: boolean | null = null;
     let _pollCount = 0;
+    // Eşleşmeyen parça poll takibi (navigasyon takılması / YTM autoplay ayrımı)
+    let _mismatchVid = '';
+    let _mismatchCount = 0;
+    // Parça-sonu tek seferlik tetikleme anahtarı + sonda donma sayacı + atlama anahtarı
+    let _endedFor = '';
+    let _endStallCount = 0;
+    let _skipFor = '';
     api.player.onUpdate((u: any) => {
-      // Reklam algılama — closure ile state korunur (her poll'de yeni obje gelir)
-      if (u.isAd && !_adNotified) {
-        _adNotified = true;
-        showToast('Reklam oynuyor...', 'info');
+      // Reklam main tarafta sessize alınıp anında geçilir — ekrana dokunma.
+      // Nadiren takılırsa 5sn sonra manuel geç butonu (yedek).
+      if (u.isAd) {
         setTimeout(() => { if (u.isAd) showAdSkipButton(); }, 5000);
-      } else if (!u.isAd && _adNotified) {
-        _adNotified = false;
-        hideAdSkipButton();
+        return;
       }
-      // Metadata (reklam sırasında boş gelebilir — mevcut olanı koru)
+      try { hideAdSkipButton(); } catch {}
+      const pollVid = u.videoId || '';
+      const mine = state.currentSong?.id || '';
+      const matchesMine = !pollVid || !mine || pollVid === mine;
+      if (!matchesMine) {
+        // Kullanıcı az önce parça açtıysa navigasyon bitene kadar bekle (stale poll ezmesin)
+        if (Date.now() - lastPlayRequestAt < 8000) return;
+        // 3 poll üst üste aynı yabancı parça → stabil kabul et
+        if (pollVid === _mismatchVid) _mismatchCount++;
+        else { _mismatchVid = pollVid; _mismatchCount = 1; }
+        if (_mismatchCount < 3) return;
+        _mismatchVid = ''; _mismatchCount = 0;
+        if (pollVid === _prevRequestedId) {
+          // Navigasyon takıldı (eski parça hâlâ çalıyor): bir kez daha dene, olmazsa atla
+          if (_navRetryId !== mine && state.currentSong) {
+            _navRetryId = mine;
+            playSong(state.currentSong);
+          } else {
+            _navRetryId = '';
+            showToast('Şarkı açılamadı, sonrakine geçiliyor...', 'warning');
+            nextSong();
+          }
+        } else {
+          // YTM kendi autoplay'ini oynattı — bizim sırayla ilerle (Spotify: hep kendi kuyruğun)
+          handleTrackEnded();
+        }
+        return;
+      }
+      _mismatchVid = ''; _mismatchCount = 0;
+      // Parça sonu → otomatik sıradaki (Spotify davranışı; repeat-one handleTrackEnded içinde).
+      // Birincil sinyal playerState===0 (deterministik, eşik yarışı yok).
+      // Yedek: sonda donmuş poll'ler (oynuyor/duraklatılmış fark etmez, 2 poll üst üste).
+      if (mine && u.duration > 5) {
+        const endKey = mine + '|' + Math.round(u.duration);
+        const nearEnd = (u.currentTime || 0) >= (u.duration || 0) - 2;
+        if (u.playerState === 0 && nearEnd) {
+          if (_endedFor !== endKey) {
+            _endedFor = endKey;
+            handleTrackEnded();
+          }
+          return;
+        }
+        if ((u.currentTime || 0) >= (u.duration || 0) - 0.2) {
+          _endStallCount++;
+          if (_endStallCount >= 2 && _endedFor !== endKey) {
+            _endedFor = endKey;
+            handleTrackEnded();
+            return;
+          }
+        } else {
+          _endStallCount = 0;
+          if ((u.currentTime || 0) < (u.duration || 0) - 2) _endedFor = '';
+        }
+      } else {
+        _endStallCount = 0;
+      }
+      // Açılamayan parça (Spotify: otomatik atla) — yavaş ağa tolerans için 12sn bekle
+      if (mine && Date.now() - lastPlayRequestAt > 12000 && (!u.duration || !u.title)) {
+        const skipKey = 'skip|' + mine;
+        if (_skipFor !== skipKey) {
+          _skipFor = skipKey;
+          showToast('Şarkı açılamadı, sonrakine geçiliyor...', 'warning');
+          nextSong();
+        }
+        return;
+      }
+      if (u.duration && u.title) _skipFor = '';
+      // Metadata (eşleşen parça)
       if (u.title) $('#playerTitle').textContent = u.title;
       if (u.artist) $('#playerArtist').textContent = u.artist;
       if (u.thumbnail) $('#playerThumb').style.backgroundImage = `url(${u.thumbnail})`;
@@ -761,6 +846,14 @@
   async function playSong(song: Song) {
     dlog('playSong çağrıldı:', song.id, song.title);
 
+    // İstek takibi (aynı şarkı tekrarında sıfırlama — retry sayacı korunur)
+    const _prevId = state.currentSong?.id;
+    if (song.id !== _prevId) {
+      _navRetryId = '';
+      _prevRequestedId = requestedId;
+      requestedId = song.id;
+    }
+
     // Queue index'i hemen güncelle (await öncesi) — sonraki/önceki doğru çalışsın
     const idx = state.queue.findIndex((s) => s.id === song.id);
     if (idx !== -1) state.queueIndex = idx;
@@ -773,6 +866,7 @@
     state.currentSong = song as QueueItem;
     state.currentTime = 0;
     state.duration = song.duration || 0;
+    lastPlayRequestAt = Date.now();
 
     // Add to recently played
     state.recentlyPlayed = [song, ...state.recentlyPlayed.filter((s) => s.id !== song.id)].slice(0, 100);
@@ -787,6 +881,8 @@
     $$('.song-row').forEach((r) => {
       r.classList.toggle('playing', (r as HTMLElement).dataset.id === song.id);
     });
+    // Sıra paneli açıksa yaklaşan listeyi tazele
+    if (state.panelOpen === 'queue') renderQueue();
 
     if (!state.isLoggedIn) {
       dlog('Giriş yok, oynatılamıyor');
@@ -830,6 +926,12 @@
   // konum senkronu korunur: startTimestamp = şimdi - konum.
   let lastDiscordKey = '';
   let lastDiscordSentAt = 0;
+  // Kullanıcının en son parça açma zamanı — navigasyon bitene kadar stale poll'ler ekranı ezemez
+  let lastPlayRequestAt = 0;
+  // İstenen / bir önceki istenen parça (navigasyon takılması vs YTM autoplay ayrımı)
+  let requestedId = '';
+  let _prevRequestedId = '';
+  let _navRetryId = '';
   const DISCORD_REFRESH_MS = 30000;
   function updateDiscordForTrack(key: string, title: string, artist: string, coverUrl?: string, album?: string, force = false) {
     if (!key || !title) return;
@@ -845,7 +947,10 @@
     const payload: Record<string, unknown> = {
       details: title,
       state: artist || '',
-      startTimestamp: start
+      startTimestamp: start,
+      // Spotify görünümü: küçük rozet = bizim logo, hover = Harmonic Music
+      smallImageKey: 'logo',
+      smallImageText: 'Harmonic Music'
     };
     if (state.duration > 0) payload.endTimestamp = start + Math.round(state.duration * 1000);
     if (coverUrl) payload.coverUrl = coverUrl;
@@ -953,8 +1058,24 @@
       api.player.seek(0).catch(() => {});
       return;
     }
-    state.queueIndex = (state.queueIndex - 1 + state.queue.length) % state.queue.length;
+    // Spotify: ilk şarkıda önceki → baştan başlat (sona sarma yok)
+    if (state.queueIndex <= 0) {
+      api.player.seek(0).catch(() => {});
+      return;
+    }
+    state.queueIndex = state.queueIndex - 1;
     playSong(state.queue[state.queueIndex]);
+  }
+
+  // Parça bitti (Spotify: repeat-one → baştan çal, yoksa sıradakine geç)
+  function handleTrackEnded() {
+    _mismatchVid = ''; _mismatchCount = 0;
+    if (!state.currentSong) return;
+    if (state.repeat === 'one') {
+      playSong(state.currentSong);
+      return;
+    }
+    nextSong();
   }
 
   function toggleShuffle() {
@@ -1232,14 +1353,17 @@ function updatePlayIcon() {
         if (type === 'user') {
           const song = state.userQueue[idx];
           if (song) {
-            // Kullanıcı queue'sundan seçildi → userQueue'dan kaldır, context'e ekle
+            // Kullanıcı queue'sundan seçildi → tüket, sonraki kaldığı yerden devam etsin
             state.userQueue.splice(idx, 1);
             state.queue = rebuildMergedQueue();
-            state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
+            state.queueIndex = idx - 1;
             playSong(song);
           }
         } else if (type === 'context') {
-          const song = state.contextQueue[idx];
+          // idx dilimlenmiş upcomingCtx'e ait — tam dizinden değil dilimden oku
+          const currentCtxIdx = state.contextQueue.findIndex((s) => s.id === state.currentSong?.id);
+          const upcomingCtx = currentCtxIdx >= 0 ? state.contextQueue.slice(currentCtxIdx + 1) : state.contextQueue;
+          const song = upcomingCtx[idx];
           if (song) {
             state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
             playSong(song);
@@ -1698,71 +1822,66 @@ function updatePlayIcon() {
     async function refresh(){ if(!listEl) return; const cs:any[]=await (api as any).authClients.list(); listEl.innerHTML= cs.length? cs.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--c-border)"><span>${escapeHtml(c.appName)} (${escapeHtml(c.appId)})</span><button data-revoke="${escapeHtml(c.appId)}" style="color:var(--c-error)">Sil</button></div>`).join('') : '<em>Henüz bağlı uygulama yok</em>'; listEl.querySelectorAll('[data-revoke]').forEach(b=> b.addEventListener('click', async()=>{ await (api as any).authClients.revoke((b as HTMLElement).dataset.revoke!); refresh(); })); }
     refresh(); btn?.addEventListener('click', async()=>{ if(!aId.value||!aName.value) return showToast('appId ve ad gerekli','warning'); await (api as any).authClients.create({appId:aId.value, appName:aName.value}); aId.value=''; aName.value=''; refresh(); showToast('İstemci eklendi','success'); });
   }
-  function setupDiscordGateway() {
+  function setupDiscord() {
     const enabledToggle = $('#discordEnabled') as HTMLInputElement;
     const buttonsToggle = $('#discordButtons') as HTMLInputElement;
     const thumbsToggle = $('#discordThumbnails') as HTMLInputElement;
-    const tokenInput = $('#discordTokenInput') as HTMLInputElement;
-    const connectBtn = $('#btnDiscordGwConnect');
-    const disconnectBtn = $('#btnDiscordGwDisconnect');
     const statusEl = $('#discordConnectionStatus');
 
     // ytmdesktop2 referans: discord.enabled / buttons / thumbnails
     api.store.get('discordEnabled').then((v: any) => { if (v !== undefined) enabledToggle.checked = !!v; });
     api.store.get('discordButtons').then((v: any) => { if (v !== undefined) buttonsToggle.checked = !!v; });
     api.store.get('discordThumbnails').then((v: any) => { if (v !== undefined) thumbsToggle.checked = !!v; });
-    enabledToggle.addEventListener('change', () => { api.store.set('discordEnabled', enabledToggle.checked); if (!enabledToggle.checked) { api.discord.clearActivity().catch(()=>{}); statusEl.textContent = 'Kapalı'; } });
+    enabledToggle.addEventListener('change', () => { api.store.set('discordEnabled', enabledToggle.checked); if (!enabledToggle.checked) { api.discord.clearActivity().catch(()=>{}); statusEl.textContent = 'Kapalı'; } else { refreshDiscordStatus(); } });
     buttonsToggle.addEventListener('change', () => api.store.set('discordButtons', buttonsToggle.checked));
     thumbsToggle.addEventListener('change', () => api.store.set('discordThumbnails', thumbsToggle.checked));
 
-    // Kayıtlı token'ı yükle
-    api.store.get('discordToken').then((t: string) => {
-      if (t) {
-        tokenInput.value = t;
-        // Otomatik bağlan
-        statusEl.textContent = 'Bağlanıyor...';
-        api.discord.gwConnect(t).then((ok: boolean) => {
-          statusEl.textContent = ok ? '✓ Bağlı (kapak aktif)' : '✗ Bağlanamadı';
-          connectBtn.style.display = ok ? 'none' : 'flex';
-          disconnectBtn.style.display = ok ? 'flex' : 'none';
-        });
-      }
-    });
-
-    connectBtn.addEventListener('click', async () => {
-      const token = tokenInput.value.trim();
-      if (!token) {
-        showToast('Discord token girin.', 'warning');
-        return;
-      }
-      statusEl.textContent = 'Bağlanıyor...';
-      (connectBtn as HTMLButtonElement).disabled = true;
+    // RPC durumu (tokensuz — Discord masaüstü uygulaması gerekli)
+    async function refreshDiscordStatus() {
       try {
-        const ok = await api.discord.gwConnect(token);
-        if (ok) {
-          await api.store.set('discordToken', token);
-          statusEl.textContent = '✓ Bağlı (kapak aktif)';
-          connectBtn.style.display = 'none';
-          disconnectBtn.style.display = 'flex';
-          showToast('Discord Gateway bağlandı. Şarkı kapağı artık görünmeli.', 'success');
-        } else {
-          statusEl.textContent = '✗ Bağlanamadı — token geçersiz veya Discord kapalı';
-          showToast('Discord Gateway bağlanamadı.', 'error');
-        }
-      } catch (e: any) {
-        statusEl.textContent = '✗ Hata: ' + (e?.message || String(e));
-      }
-      (connectBtn as HTMLButtonElement).disabled = false;
-    });
+        const ok = await api.discord.isReady();
+        statusEl.textContent = ok ? '✓ Bağlı (RPC)' : 'Discord uygulaması bekleniyor...';
+      } catch { statusEl.textContent = '—'; }
+    }
+    refreshDiscordStatus();
+    setInterval(() => { if (enabledToggle.checked) refreshDiscordStatus(); }, 15000);
 
-    disconnectBtn.addEventListener('click', async () => {
-      await api.discord.gwDisconnect();
-      await api.store.set('discordToken', '');
-      tokenInput.value = '';
-      statusEl.textContent = '—';
-      connectBtn.style.display = 'flex';
-      disconnectBtn.style.display = 'none';
-      showToast('Discord Gateway kesildi.', 'info');
+    // Discord hesabı (resmi OAuth2 — token yapıştırma yok)
+    const accName = $('#discordAccountName');
+    const accAvatar = $('#discordAvatar') as HTMLImageElement;
+    const loginBtn = $('#btnDiscordLogin');
+    const logoutBtn = $('#btnDiscordLogout');
+    async function refreshDiscordAccount() {
+      try {
+        const u: any = await (api as any).discordAuth.getUser();
+        if (u) {
+          if (accName) accName.textContent = u.name || u.username || 'Bağlı';
+          if (u.picture) { accAvatar.src = u.picture; accAvatar.style.display = 'block'; }
+          else accAvatar.style.display = 'none';
+          loginBtn.style.display = 'none';
+          logoutBtn.style.display = 'flex';
+        } else {
+          if (accName) accName.textContent = 'Bağlı değil';
+          accAvatar.style.display = 'none';
+          loginBtn.style.display = 'flex';
+          logoutBtn.style.display = 'none';
+        }
+      } catch { if (accName) accName.textContent = 'Bağlı değil'; }
+    }
+    refreshDiscordAccount();
+    loginBtn.addEventListener('click', async () => {
+      const r: any = await (api as any).discordAuth.login().catch((e: any) => ({ success: false, error: String(e?.message || e) }));
+      if (r?.success) {
+        showToast('Discord girişi başarılı.', 'success');
+        refreshDiscordAccount();
+      } else {
+        showToast(r?.error || 'Discord girişi başarısız.', 'error');
+      }
+    });
+    logoutBtn.addEventListener('click', async () => {
+      await (api as any).discordAuth.logout().catch(() => {});
+      refreshDiscordAccount();
+      showToast('Discord çıkışı yapıldı.', 'info');
     });
   }
 
@@ -1786,7 +1905,7 @@ function updatePlayIcon() {
     setupPlaylists();
     setupSettings();
     setupAuth();
-    setupDiscordGateway();
+    setupDiscord();
     setupVolumeLyricsAuthUI();
     setupKeyboardShortcuts();
     setupMediaSession();

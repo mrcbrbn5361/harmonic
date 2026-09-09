@@ -3,7 +3,7 @@ import * as path from 'path';
 import { YouTubeAPI } from './api/innertube';
 import { StoreManager } from './utils/store';
 import { DiscordRPC } from './utils/discord';
-import { DiscordGateway } from './utils/discord-gateway';
+import { DiscordOAuth } from './auth/discord-oauth';
 import { GoogleOAuth } from './auth/google-oauth';
 import { MusicAuth } from './auth/music-auth';
 import { StreamResolver } from './api/stream-resolver';
@@ -24,7 +24,7 @@ let mainWindow: BrowserWindow | null = null;
 let youtubeAPI: YouTubeAPI;
 let storeManager: StoreManager;
 let discordRPC: DiscordRPC;
-let discordGateway: DiscordGateway;
+let discordOAuth: DiscordOAuth;
 let googleAuth: GoogleOAuth;
 let musicAuth: MusicAuth;
 let streamResolver: StreamResolver;
@@ -69,14 +69,12 @@ function createWindow(): void {
     mainWindow = null;
     // Gizli oynatıcı penceresi window-all-closed'ı engeller — burada kapat
     try { streamResolver?.destroy(); } catch {}
-    try { discordGateway?.disconnect(); } catch {}
     try { discordRPC?.disconnect(); } catch {}
     if (process.platform !== 'darwin') app.quit();
   });
 
   mainWindow.on('close', () => {
     try { streamResolver?.destroy(); } catch {}
-    try { discordGateway?.disconnect(); } catch {}
     try { discordRPC?.disconnect(); } catch {}
   });
 
@@ -324,27 +322,28 @@ function setupIPC(): void {
     return await musicAuth.openChromeLogin();
   });
   ipcMain.handle('auth:getLoginUrl', () => musicAuth.getLoginUrl());
-  ipcMain.handle('auth:importFromExternalChrome', async () => {
-    return await musicAuth.importFromExternalChrome();
+  ipcMain.handle('auth:importFromExternalChrome', async (_e, targetId?: string) => {
+    return await musicAuth.importFromExternalChrome(targetId);
   });
   ipcMain.handle('auth:importFromChrome', async () => {
     let result = await musicAuth.importFromChrome();
     if (!result.success) {
-      // Dis Chrome denemesi — acik sekme varsa oradan al
-      const ext = await musicAuth.importFromExternalChrome().catch(()=>null);
+      const target = await musicAuth.findYouTubeMusicTarget().catch(()=>null);
+      const ext = await musicAuth.importFromExternalChrome(target?.id).catch(()=>null);
       if (ext && ext.success) result = ext as any;
     }
     if (result.success) {
       // importFromChrome zaten profili kaydetti. Ek olarak streamResolver'dan da dene
-      // ama sadece gerçek isim içeren veriyi kabul et.
+      // ama sadece mevcut verileri GÜNCELLE — boş alanları eski veriyle doldur
       try {
         const prof = await streamResolver.fetchAccountProfile();
         if (prof && prof.name && prof.name !== 'Guide' && prof.name.length > 1) {
+          const existing = musicAuth.getUser();
           musicAuth.setUser({
             id: 'ytmusic',
-            name: prof.name,
-            email: prof.email || '',
-            picture: prof.picture || '',
+            name: prof.name || existing?.name || '',
+            email: prof.email || existing?.email || '',
+            picture: prof.picture || existing?.picture || '',
             provider: 'youtube-music'
           });
         }
@@ -358,12 +357,16 @@ function setupIPC(): void {
     await musicAuth.logout();
     return { success: true };
   });
+  ipcMain.handle('auth:logoutMusicCompletely', async () => {
+    await musicAuth.logoutCompletely();
+    return { success: true };
+  });
   ipcMain.handle('auth:isMusicAuthenticated', () => musicAuth.isAuthenticated());
   ipcMain.handle('auth:getMusicUser', () => musicAuth.getUser());
 
-  // ── Discord Rich Presence IPC ────────────────
+  // ── Discord Rich Presence IPC (yalnızca resmi RPC/IPC yolu — token yok) ──
   ipcMain.handle('discord:getAppId', () => discordRPC.getAppId());
-  ipcMain.handle('discord:isReady', () => discordGateway.isReady() || discordRPC.isReady());
+  ipcMain.handle('discord:isReady', () => discordRPC.isReady());
   ipcMain.handle('discord:setActivity', async (_, data) => {
     const enabled = storeManager.get('discordEnabled' as any);
     if (enabled === false) return;
@@ -371,43 +374,24 @@ function setupIPC(): void {
     const showThumbs = storeManager.get('discordThumbnails' as any);
     if (showButtons === false) delete (data as any).buttons;
     if (showThumbs === false) { delete (data as any).coverUrl; delete (data as any).largeImageText; }
-    const gwData: any = { ...data };
-    if (data.startTimestamp != null && gwData.startMs == null) gwData.startMs = data.startTimestamp;
-    if (data.endTimestamp != null && gwData.endMs == null) gwData.endMs = data.endTimestamp;
-    if ((data as any).largeImageText && !gwData.largeText) gwData.largeText = (data as any).largeImageText;
-    if ((data as any).coverUrl && !gwData.largeImage) gwData.largeImage = (data as any).coverUrl;
-    if (showButtons === false) delete gwData.buttons;
-    if (showThumbs === false) { delete gwData.largeImage; delete gwData.largeText; }
-    if (discordGateway.isReady()) {
-      await discordGateway.setActivity(gwData);
-    } else if (discordRPC.isReady()) {
+    if (discordRPC.isReady()) {
       await discordRPC.setActivity(data);
     }
   });
   ipcMain.handle('discord:clearActivity', async () => {
-    if (discordGateway.isReady()) {
-      await discordGateway.clearActivity();
-    } else {
-      await discordRPC.clearActivity();
-    }
+    await discordRPC.clearActivity();
   });
 
-  // ── Discord Gateway IPC ──────────────────────
-  ipcMain.handle('discord:gwConnect', async (_, token: string) => {
-    const appId = discordRPC.getAppId();
-    const ok = await discordGateway.connect(token, appId);
-    if (ok) {
-      // Fallback buton — şarkı değiştirilince renderer'dan gelen buttons override eder
-      discordGateway.setButtons([
-        { label: "YouTube Music'te Aç", url: 'https://music.youtube.com' },
-      ]);
-    }
-    return ok;
+  // ── Discord OAuth girişi (resmi Authorization Code + PKCE — kullanıcı tokeni yok) ──
+  ipcMain.handle('discord:login', async () => {
+    if (!mainWindow) return { success: false, error: 'Pencere bulunamadı' };
+    return await discordOAuth.loginDiscord(mainWindow);
   });
-  ipcMain.handle('discord:gwDisconnect', () => {
-    discordGateway.disconnect();
+  ipcMain.handle('discord:logout', async () => {
+    await discordOAuth.logoutDiscord();
     return true;
   });
+  ipcMain.handle('discord:getUser', () => discordOAuth.getDiscordUser());
 
   // ── Auth clients (ytmdesktop2 auth) ───────
   ipcMain.handle('auth:clients', () => authProvider.listClients());
@@ -433,7 +417,6 @@ function setupIPC(): void {
       forced: false
     };
   });
-  ipcMain.handle('discord:gwIsReady', () => discordGateway.isReady());
 }
 
 if (!app.isDefaultProtocolClient('harmonic')) app.setAsDefaultProtocolClient('harmonic');
@@ -448,11 +431,7 @@ app.whenReady().then(async () => {
   streamResolver = new StreamResolver();
   youtubeAPI = new YouTubeAPI();
   discordRPC = new DiscordRPC();
-  discordGateway = new DiscordGateway();
-  discordGateway.onAuthFailure(() => {
-    console.error('[Discord GW] Auth failed');
-    discordGateway.disconnect();
-  });
+  discordOAuth = new DiscordOAuth();
 
   // Load Google auth token if available
   if (googleAuth.isGoogleAuthenticated()) {
@@ -482,14 +461,12 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   try { streamResolver?.destroy(); } catch {}
-  try { discordGateway?.disconnect(); } catch {}
   try { discordRPC?.disconnect(); } catch {}
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   try { streamResolver?.destroy(); } catch {}
-  try { discordGateway?.disconnect(); } catch {}
   try { discordRPC?.disconnect(); } catch {}
   for (const win of BrowserWindow.getAllWindows()) {
     try { win.destroy(); } catch {}

@@ -15,7 +15,6 @@ interface StoreData {
   oauthClientSecret?: string;
   shuffle: boolean;
   repeat: 'off' | 'all' | 'one';
-  discordToken?: string;
   discordEnabled?: boolean;
 }
 
