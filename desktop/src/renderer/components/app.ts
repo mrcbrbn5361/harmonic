@@ -242,15 +242,6 @@
     const openLoginBtn = $('#btnOpenLogin');
     const startWelcomeBtn = $('#btnStartWelcome');
 
-    // LOCALSTORAGE'da kaydedilmiş login state'ini kontrol et
-    const storedLogin = localStorage.getItem('hm_harmonic_login');
-    if (storedLogin === '1') {
-      state.isLoggedIn = true;
-      state.user = JSON.parse(localStorage.getItem('hm_harmonic_user') || 'null');
-      updateAuthUI();
-    }
-
-    // Chrome Music Login (orijinal flow)
     async function doLoginMusic() {
       showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
       const opened = await api.auth.loginMusic();
@@ -258,30 +249,11 @@
         showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
         return;
       }
-      showChromeImportPrompt(opened, (success: boolean, user: any) => {
-        if (success) {
-          localStorage.setItem('hm_harmonic_login', '1');
-          localStorage.setItem('hm_harmonic_user', JSON.stringify(user));
-          state.isLoggedIn = true;
-          state.user = user;
-          updateAuthUI();
-          showToast(`Hoş geldin ${user?.name || ''}!`, 'success');
-        } else {
-          showToast('Giriş iptal edildi', 'error');
-          localStorage.removeItem('hm_harmonic_login');
-          localStorage.removeItem('hm_harmonic_user');
-        }
-      });
+      showChromeImportPrompt(opened);
     }
 
-    if (loginBtn) {
-      // Eğer zaten login state' varsa butonu gizle
-      if (state.isLoggedIn) {
-        loginBtn.style.display = 'none';
-      } else {
-        loginBtn.addEventListener('click', doLoginMusic);
-      }
-    }
+    // Her durumda listener ekle — updateAuthUI görünürlüğü yönetir
+    if (loginBtn) loginBtn.addEventListener('click', doLoginMusic);
     if (openLoginBtn) openLoginBtn.addEventListener('click', doLoginMusic);
     if (startWelcomeBtn) startWelcomeBtn.addEventListener('click', doLoginMusic);
 
@@ -290,12 +262,8 @@
         await api.auth.logoutMusic().catch(()=>{});
         state.isLoggedIn = false;
         state.user = null;
-        localStorage.removeItem('hm_harmonic_login');
-        localStorage.removeItem('hm_harmonic_user');
         updateAuthUI();
         showToast('Çıkış yapıldı.', 'info');
-        // Login butonunu tekrar göster
-        if (loginBtn) loginBtn.style.display = 'flex';
       });
     }
   }
@@ -767,16 +735,11 @@
         $('#timeNow').textContent = formatTime(state.currentTime);
         $('#timeEnd').textContent = formatTime(state.duration);
       }
-      // Play/pause state — debounce: 1 üst üste aynı state gelmeden değiştirme
+      // Play/pause state
       const incomingPlaying = !u.paused && !u.isAd;
-      if (incomingPlaying === _lastPollPlaying) {
-        _pollCount++;
-      } else {
-        _lastPollPlaying = incomingPlaying;
-        _pollCount = 1;
-      }
-      if (_pollCount >= 1 && state.playing !== incomingPlaying) {
+      if (state.playing !== incomingPlaying) {
         state.playing = incomingPlaying;
+        state.paused = !incomingPlaying;
         updatePlayIcon();
       }
       // Discord: parça değişince güncelle (timer korunur), durunca temizle
@@ -1020,9 +983,9 @@
 function updatePlayIcon() {
     const playIcon = $('#btnPlay .icon-play') as HTMLElement;
     const pauseIcon = $('#btnPlay .icon-pause') as HTMLElement;
-    // Playing durumu iken ve paused değilse play ikonunu gizle, durak ikonunu göster
-    playIcon.style.display = state.playing && !state.paused ? 'none' : 'block';
-    pauseIcon.style.display = state.playing && !state.paused ? 'block' : 'none';
+    const isPlaying = state.playing;
+    playIcon.style.display = isPlaying ? 'none' : 'block';
+    pauseIcon.style.display = isPlaying ? 'block' : 'none';
   }
   
   // ── Like ───────────────────────────────────

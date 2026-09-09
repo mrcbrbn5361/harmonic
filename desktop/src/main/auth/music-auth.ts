@@ -176,13 +176,20 @@ export class MusicAuth {
   async hasExternalYouTubeMusic(): Promise<boolean> {
     try{
       const { execSync } = await import('child_process');
-      const out=execSync('tasklist /FI "IMAGENAME eq chrome.exe" /V 2>nul', { encoding:'utf8' });
-      return out.includes('YouTube Music');
+      try{
+        const ps=`powershell -NoProfile -Command "Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*YouTube*Music*' } | Select-Object -First 1 | ForEach-Object { $_.MainWindowTitle }"`;
+        const out=execSync(ps, { encoding:'utf8', timeout:2000 });
+        if(out && out.includes('YouTube') && out.includes('Music')) return true;
+      }catch{}
+      const out2=execSync('tasklist /FI "IMAGENAME eq chrome.exe" /V 2>nul', { encoding:'utf8' });
+      return out2.includes('YouTube Music') || out2.includes('youtube') || out2.toLowerCase().includes('music');
     }catch{ return false; }
   }
   async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean; url?: string; externalFound?: boolean }> {
     const hasExt=await this.hasExternalYouTubeMusic().catch(()=>false);
     if(hasExt){
+      // Harici Chrome'u öne getir
+      try{ const { execSync } = await import('child_process'); execSync(`powershell -NoProfile -Command "Add-Type -AssemblyName System; (Get-Process chrome | Where-Object { $_.MainWindowTitle -like '*YouTube*Music*' } | Select-Object -First 1).MainWindowHandle | ForEach-Object { Add-Type -MemberDefinition '[DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr hWnd);' -Name Win -NamespaceTmp -PassThru | % { $_.SetForegroundWindow($_) } } 2>nul"`, { timeout:1500 } as any); }catch{}
       return { opened:true, alreadyRunning:true, url:this.getLoginUrl(), externalFound:true };
     }
     try {

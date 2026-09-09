@@ -15,7 +15,7 @@ Unicode true
 !macroend
 
 !macro customUnInstall
-  RMDir /r "$APPDATA\Harmonic"
+  ; Sadece gecici profil ve kisayollari sil — kullanici verisi korunur (deleteAppDataOnUninstall:false)
   RMDir /r "$TEMP\harmonic-chrome-profile"
   Delete "$DESKTOP\Harmonic.lnk"
   Delete "$SMPROGRAMS\Harmonic.lnk"

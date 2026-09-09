@@ -157,7 +157,10 @@ section{padding:88px 0}
 }
 @media(max-width:768px){
   .nav-links,.nav-actions{display:none}
-  .nav-links.active,.nav-actions.active{display:flex;flex-direction:column;position:absolute;top:64px;left:0;right:0;background:rgba(10,10,12,.96);backdrop-filter:blur(16px);padding:16px 24px;border-bottom:1px solid var(--border);gap:12px}
+  .nav-links.mobile-open,.nav-actions.mobile-open{display:flex;flex-direction:column;position:absolute;top:64px;left:0;right:0;background:rgba(10,10,12,.96);backdrop-filter:blur(16px);padding:16px 24px;border-bottom:1px solid var(--border);gap:12px}
+  .nav-links.mobile-open{padding-bottom:8px}
+  .nav-actions.mobile-open{top:180px;padding-top:8px}
+  .nav-links.active,.nav-actions.active{display:none}
   .mobile-menu-btn{display:block}
   .features-grid,.feature-detail-grid{grid-template-columns:1fr}
   .steps-grid{grid-template-columns:repeat(2,1fr)}
