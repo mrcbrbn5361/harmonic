@@ -229,6 +229,16 @@ export class MusicAuth {
       return { success:true, cookies: cookies.length };
     } catch(e:any){ return { success:false, cookies:0, error:e?.message||String(e)}; }
   }
+  // Dis Chrome'daki acik YouTube Music'i CDP ile ice aktar (harici tarayici tespiti basariliysa)
+  async importFromExternalChrome(): Promise<{ success: boolean; cookies: number; error?: string }> {
+    const legacy = await this.importFromChromeLegacy();
+    if (legacy.success) {
+      const prof = await this.fetchProfileViaAPI().catch(()=>null);
+      if(prof && prof.name) this.store.set('musicUser', { id:'ytmusic', name:prof.name, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
+      return legacy;
+    }
+    return legacy;
+  }
   async importFromChromeLegacy(): Promise<{ success: boolean; cookies: number; error?: string }> {
     let client: any;
     try {

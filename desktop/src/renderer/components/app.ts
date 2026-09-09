@@ -560,7 +560,6 @@
         const id = (row as HTMLElement).dataset.id;
         const song = findSong(id);
         if (song) {
-          // Container içindeki tüm şarkıları context olarak ayarla
           const allRows = container.querySelectorAll('.song-row[data-id]');
           const contextSongs: QueueItem[] = [];
           let clickedIdx = 0;
@@ -572,11 +571,14 @@
             }
           });
           if (contextSongs.length) {
+            // setContext'ten ÖNCE userQueue uzunluğunu hesaba kat
+            const offset = state.userQueue.length;
             setContext(contextSongs, '', 'home');
-            state.queueIndex = clickedIdx;
+            state.queueIndex = offset + clickedIdx;
           } else {
+            const offset = state.userQueue.length;
             setContext([song as QueueItem], '', 'home');
-            state.queueIndex = 0;
+            state.queueIndex = offset;
           }
           playSong(song);
         }
@@ -759,6 +761,10 @@
   async function playSong(song: Song) {
     dlog('playSong çağrıldı:', song.id, song.title);
 
+    // Queue index'i hemen güncelle (await öncesi) — sonraki/önceki doğru çalışsın
+    const idx = state.queue.findIndex((s) => s.id === song.id);
+    if (idx !== -1) state.queueIndex = idx;
+
     // History'ye ekle (max 50)
     if (state.currentSong && state.currentSong.id !== song.id) {
       state.history = [state.currentSong, ...state.history.filter((s) => s.id !== song.id)].slice(0, 50);
@@ -791,6 +797,7 @@
     // IPC ile gizli pencerede oynat
     dlog('IPC player.play:', song.id);
     state.playing = true;
+    state.paused = false;
     updatePlayIcon();
     const res: any = await ytPlayer(song.id);
     dlog('IPC player sonucu:', res);
@@ -804,12 +811,6 @@
       showToast('Bu şarkı şu anda çalınamıyor, başka bir şarkı deneyin.', 'error');
       state.playing = false;
       updatePlayIcon();
-    }
-
-    // Queue index güncelle
-    const idx = state.queue.findIndex((s) => s.id === song.id);
-    if (idx !== -1) {
-      state.queueIndex = idx;
     }
 
     // Discord Rich Presence

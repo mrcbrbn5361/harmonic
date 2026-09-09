@@ -253,9 +253,9 @@ export class StreamResolver {
     try {
       const st: any = await win.webContents.executeJavaScript(RESOLVE_MEDIA_JS, true);
       if (st && st.ok) {
-        // Only emit if state actually changed to avoid redundant updates
+        // Emit on paused/time/title/isAd change — metadata gecikmesin
         const lastEmitted = this.lastEmittedState;
-        if (!lastEmitted || lastEmitted.paused !== st.paused || lastEmitted.currentTime !== st.currentTime) {
+        if (!lastEmitted || lastEmitted.paused !== st.paused || lastEmitted.currentTime !== st.currentTime || lastEmitted.title !== st.title || lastEmitted.isAd !== st.isAd || lastEmitted.duration !== st.duration) {
           this.lastEmittedState = { ...st };
           if (this.userWantsPaused && !st.paused) {
             try {

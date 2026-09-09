@@ -324,8 +324,16 @@ function setupIPC(): void {
     return await musicAuth.openChromeLogin();
   });
   ipcMain.handle('auth:getLoginUrl', () => musicAuth.getLoginUrl());
+  ipcMain.handle('auth:importFromExternalChrome', async () => {
+    return await musicAuth.importFromExternalChrome();
+  });
   ipcMain.handle('auth:importFromChrome', async () => {
-    const result = await musicAuth.importFromChrome();
+    let result = await musicAuth.importFromChrome();
+    if (!result.success) {
+      // Dis Chrome denemesi — acik sekme varsa oradan al
+      const ext = await musicAuth.importFromExternalChrome().catch(()=>null);
+      if (ext && ext.success) result = ext as any;
+    }
     if (result.success) {
       // importFromChrome zaten profili kaydetti. Ek olarak streamResolver'dan da dene
       // ama sadece gerçek isim içeren veriyi kabul et.

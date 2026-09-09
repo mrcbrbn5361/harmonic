@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "token_optimizer": {
+    "enabled": true,
+    "remove_duplicates": true,
+    "remove_empty_content": true,
+    "remove_redundant_context": true,
+    "compress_context": true,
+    "cache_enabled": true,
+    "deduplicate_requests": true,
+    "max_context_tokens": 4096,
+    "reserved_output_tokens": 1024
+  },
+  "processing": {
+    "normalize_whitespace": true,
+    "remove_duplicate_messages": true,
+    "remove_duplicate_system_context": true,
+    "trim_old_history": true,
+    "prioritize_recent_messages": true,
+    "preserve_system_instructions": true,
+    "preserve_user_request": true
+  },
+  "priority": {
+    "system": 100,
+    "developer": 100,
+    "user": 95,
+    "recent_context": 85,
+    "relevant_history": 50,
+    "old_history": 10,
+    "metadata": 0
+  },
+  "cache": {
+    "enabled": true,
+    "algorithm": "sha256",
+    "reuse_identical_context": true,
+    "reuse_identical_requests": true
+  },
+  "budget": {
+    "max_input_tokens": 4096,
+    "max_output_tokens": 1024,
+    "warning_threshold": 3500,
+    "hard_limit": true
+  },
+  "optimization": {
+    "target_reduction_percent": 60,
+    "minimum_reduction_tokens": 50,
+    "keep_semantic_content": true,
+    "never_modify_code_blocks": true,
+    "never_modify_urls": true,
+    "never_modify_json": true
+  },
+  "logging": {
+    "enabled": true,
+    "log_original_tokens": true,
+    "log_optimized_tokens": true,
+    "log_saved_tokens": true,
+    "log_cache_hits": true
+  }
+}
