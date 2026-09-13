@@ -83,6 +83,15 @@ export class MusicAuth {
     }
   }
 
+  async getCookieString(): Promise<string> {
+    try {
+      const cookies = await this.getCookies();
+      return cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+    } catch {
+      return '';
+    }
+  }
+
   async isAuthenticated(): Promise<boolean> {
     const cookies = await this.getCookies();
     const now = Date.now() / 1000;
@@ -176,19 +185,6 @@ export class MusicAuth {
   //    (kullanıcının ana Chrome'una dokunmaz, giriş yapması gerekir)
   // 2) "Girişi Aktar" — CDP üzerinden cookie'leri çekip Electron session'a yazar
   getLoginUrl(): string { return 'https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Dtr%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F%26feature%3Dgps&hl=tr'; }
-  // Portsu tespit: Chrome cookie dosyasında music.youtube.com var mı?
-  async hasYouTubeMusicCookieFile(): Promise<boolean> {
-    try {
-      const base = process.env.LOCALAPPDATA ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\User Data` : '';
-      const candidates = [`${base}\\Default\\Network\\Cookies`, `${base}\\Default\\Cookies`];
-      for (const p of candidates) {
-        if (!fs.existsSync(p)) continue;
-        const buf = fs.readFileSync(p);
-        if (buf.includes(Buffer.from('music.youtube.com')) || buf.includes(Buffer.from('youtube'))) return true;
-      }
-    } catch {}
-    return false;
-  }
   async findYouTubeMusicTarget(): Promise<{ id: string; url: string } | null> {
     for (const port of CHROME_DEBUG_PORTS) {
       try {
@@ -205,13 +201,16 @@ export class MusicAuth {
     return null;
   }
   async hasExternalYouTubeMusic(): Promise<boolean> {
-    if (await this.findYouTubeMusicTarget().then(t=>!!t).catch(()=>false)) return true;
-    return await this.hasYouTubeMusicCookieFile();
+    const target = await this.findYouTubeMusicTarget().catch(() => null);
+    return !!target;
   }
   async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean; url?: string; externalFound?: boolean; targetId?: string }> {
     const target = await this.findYouTubeMusicTarget();
     if(target){
-      try{ const { execSync } = await import('child_process'); execSync(`powershell -NoProfile -Command "Add-Type -AssemblyName System; (Get-Process chrome | Where-Object { $_.MainWindowTitle -like '*YouTube*Music*' } | Select-Object -First 1).MainWindowHandle | ForEach-Object { Add-Type -MemberDefinition '[DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr hWnd);' -Name Win -NamespaceTmp -PassThru | % { $_.SetForegroundWindow($_) } } 2>nul"`, { timeout:1500 } as any); }catch{}
+      try {
+        const { exec } = await import('child_process');
+        exec(`powershell -NoProfile -Command "$p = Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*YouTube*Music*' } | Select-Object -First 1; if ($p) { (New-Object -ComObject WScript.Shell).AppActivate($p.Id) }"`, { timeout: 2000 }, () => {});
+      } catch {}
       return { opened:true, alreadyRunning:true, url:target.url, externalFound:true, targetId: target.id };
     }
     try {
@@ -324,23 +323,6 @@ export class MusicAuth {
       return { success:true, cookies: cookies.length };
     } catch(e:any){ return { success:false, cookies:0, error:e?.message||String(e)}; }
   }
-  // Portsu: Chrome cookie dosyasını kopyala ve Electron session'a aktar
-  async importFromCookieFile(): Promise<{ success: boolean; cookies: number; error?: string }> {
-    try {
-      const base = process.env.LOCALAPPDATA ? `${process.env.LOCALAPPDATA}\\Google\\Chrome\\User Data` : '';
-      const src = fs.existsSync(`${base}\\Default\\Network\\Cookies`) ? `${base}\\Default\\Network\\Cookies` : `${base}\\Default\\Cookies`;
-      if (!fs.existsSync(src)) return { success:false, cookies:0, error:'Chrome cookie dosyası bulunamadı.' };
-      const tmp = `${process.env.TEMP}\\harmonic-chrome-cookies.tmp`;
-      fs.copyFileSync(src, tmp);
-      // Hızlı string tarama ile LOGIN_INFO/SAPISID var mı kontrol et (decrypt etmeden)
-      const buf = fs.readFileSync(tmp);
-      const hasLogin = buf.includes(Buffer.from('LOGIN_INFO')) || buf.includes(Buffer.from('SAPISID'));
-      try { fs.unlinkSync(tmp); } catch {}
-      if (!hasLogin) return { success:false, cookies:0, error:'Chrome\'da YouTube Music girişi bulunamadı — önce music.youtube.com\'da giriş yapın.' };
-      // Gerçek decrypt için safeStorage gerekir — şimdilik varlığı tespit edildi, kullanıcıyı Electron penceresine yönlendirme yerine başarılı say
-      return { success:true, cookies:1 };
-    } catch(e:any){ return { success:false, cookies:0, error:e?.message||String(e)} }
-  }
   // Dis Chrome'daki acik YouTube Music'i dogrudan target ID ile ice aktar
   async importFromExternalChrome(targetId?: string): Promise<{ success: boolean; cookies: number; error?: string }> {
     if (targetId) {
@@ -350,14 +332,6 @@ export class MusicAuth {
         if(prof && prof.name) this.store.set('musicUser', { id:'ytmusic', name:prof.name, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
         return byTarget;
       }
-    }
-    const fileBased = await this.importFromCookieFile();
-    if (fileBased.success) {
-      // Dosya tabanlı tespit başarılı — kullanıcı zaten Chrome'da girişli, Electron session'a cookie import sonrası profil çek
-      const prof = await this.fetchProfileViaAPI().catch(()=>null);
-      if(prof && prof.name) this.store.set('musicUser', { id:'ytmusic', name:prof.name, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
-      // En azından varlığı doğrulandı
-      return fileBased;
     }
     const legacy = await this.importFromChromeLegacy();
     if (legacy.success) {

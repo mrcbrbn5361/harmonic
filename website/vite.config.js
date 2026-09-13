@@ -14,7 +14,8 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         ozellikler: resolve(__dirname, 'ozellikler.html'),
         indir: resolve(__dirname, 'indir.html'),
-        sss: resolve(__dirname, 'sss.html')
+        sss: resolve(__dirname, 'sss.html'),
+        discordBot: resolve(__dirname, 'discord-bot.html')
       }
     }
   },

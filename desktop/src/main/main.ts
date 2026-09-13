@@ -11,6 +11,7 @@ import { authProvider } from './providers/auth-provider';
 import { volumeRatioProvider } from './providers/volume-ratio';
 import { lyricsProvider } from './providers/lyrics-provider';
 import { autoUpdater } from 'electron-updater';
+import { BotServer } from './api/bot-server';
 
 // Gizli çözücü penceresinde otomatik oynatmaya izin ver (kullanıcı hareketi gerekmesin)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -28,6 +29,7 @@ let discordOAuth: DiscordOAuth;
 let googleAuth: GoogleOAuth;
 let musicAuth: MusicAuth;
 let streamResolver: StreamResolver;
+let botServer: BotServer;
 let resolverListenerSet = false;
 
 const isDev = !app.isPackaged;
@@ -399,10 +401,35 @@ function setupIPC(): void {
   ipcMain.handle('auth:revokeClient', (_, appId:string) => authProvider.revoke(appId));
   // ── VolumeRatio ───────────────────────────
   ipcMain.handle('volumeRatio:isEnabled', () => volumeRatioProvider.isEnabled());
-  ipcMain.handle('volumeRatio:setEnabled', (_, v:boolean) => volumeRatioProvider.setEnabled(v));
+  ipcMain.handle('volumeRatio:setEnabled', async (_, v: boolean) => {
+    volumeRatioProvider.setEnabled(v);
+    if (streamResolver) {
+      await streamResolver.setVolume(streamResolver.getVolume());
+    }
+  });
   // ── Lyrics ────────────────────────────────
   ipcMain.handle('lyrics:isEnabled', () => lyricsProvider.isEnabled());
   ipcMain.handle('lyrics:setEnabled', (_, v:boolean) => lyricsProvider.setEnabled(v));
+
+  // ── Discord Bot REST API (Port 9863) ───────
+  ipcMain.handle('botServer:getState', () => botServer.getState());
+  ipcMain.handle('botServer:updateState', (_, data) => {
+    botServer.updateState(data);
+    return true;
+  });
+  ipcMain.handle('botServer:toggle', async (_, enable: boolean) => {
+    storeManager.set('botServerEnabled' as any, enable);
+    if (enable) {
+      return await botServer.start();
+    } else {
+      await botServer.stop();
+      return false;
+    }
+  });
+  ipcMain.handle('botServer:getStatus', () => ({
+    running: botServer.isRunning(),
+    port: botServer.getPort()
+  }));
 
   // ── Auto-update ─────────────────────────────
   ipcMain.handle('auto:checkForUpdates', () => {
@@ -411,7 +438,7 @@ function setupIPC(): void {
 
   ipcMain.handle('auto:getUpdateStatus', () => {
     return {
-      version: (autoUpdater as any).currentVersion || '1.0.0',
+      version: (autoUpdater as any).currentVersion || '1.0.1',
       releaseNotes: null,
       releaseDate: null,
       forced: false
@@ -430,8 +457,14 @@ app.whenReady().then(async () => {
   musicAuth = new MusicAuth();
   streamResolver = new StreamResolver();
   youtubeAPI = new YouTubeAPI();
+  youtubeAPI.setCookieProvider(async () => await musicAuth.getCookieString());
   discordRPC = new DiscordRPC();
   discordOAuth = new DiscordOAuth();
+  botServer = new BotServer(9863);
+  const botServerEnabled = storeManager.get('botServerEnabled' as any);
+  if (botServerEnabled !== false) {
+    await botServer.start();
+  }
 
   // Load Google auth token if available
   if (googleAuth.isGoogleAuthenticated()) {
@@ -462,12 +495,14 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   try { streamResolver?.destroy(); } catch {}
   try { discordRPC?.disconnect(); } catch {}
+  try { botServer?.stop(); } catch {}
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', () => {
   try { streamResolver?.destroy(); } catch {}
   try { discordRPC?.disconnect(); } catch {}
+  try { botServer?.stop(); } catch {}
   for (const win of BrowserWindow.getAllWindows()) {
     try { win.destroy(); } catch {}
   }

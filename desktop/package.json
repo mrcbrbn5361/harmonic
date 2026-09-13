@@ -1,6 +1,6 @@
 {
   "name": "harmonic",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Harmonic - Premium music streaming for Windows 11",
   "main": "dist/main/main.js",
   "author": "Harmonic Team",
@@ -18,7 +18,7 @@
     "build:installer": "npm run build && electron-builder --win nsis",
     "build:win": "npm run build && electron-builder --win",
     "build:portable": "npm run build && electron-builder --win portable",
-    "typecheck": "tsc --noEmit -p tsconfig.main.json"
+    "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "chrome-remote-interface": "^0.34.0",

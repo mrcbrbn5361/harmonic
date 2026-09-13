@@ -1,6 +1,6 @@
 {
   "name": "harmonic-website",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Harmonic Official Website",
   "private": true,
   "scripts": {

@@ -542,9 +542,11 @@ export class StreamResolver {
     await this.execCmd('pause');
     // Eski interval varsa temizle (çift çağrı hatasını önle)
     if (this._pauseEnforceInterval) { clearInterval(this._pauseEnforceInterval); this._pauseEnforceInterval = null; }
-    // Agresif pause: YT Music bazen otomatik resume eder — daha az sık kontrol et (1sn)
+    // YT Music yükleme esnasında autoplay tetikleyebilir — ilk 3 saniye kontrol et ve durdur
+    let checks = 0;
     this._pauseEnforceInterval = setInterval(async () => {
-      if (!this.userWantsPaused) {
+      checks++;
+      if (!this.userWantsPaused || checks > 3) {
         if (this._pauseEnforceInterval) { clearInterval(this._pauseEnforceInterval); this._pauseEnforceInterval = null; }
         return;
       }
@@ -569,9 +571,19 @@ export class StreamResolver {
   async seek(seconds: number): Promise<void> {
     await this.execCmd('seek', String(seconds));
   }
+  getVolume(): number {
+    return this.volume;
+  }
   async setVolume(vol: number): Promise<void> {
     this.volume = Math.max(0, Math.min(1, vol));
-    await this.execCmd('volume', String(this.volume));
+    let effective = this.volume;
+    try {
+      const { volumeRatioProvider } = await import('../providers/volume-ratio');
+      if (volumeRatioProvider.isEnabled() && effective > 0) {
+        effective = Math.min(1, Math.pow(effective, 0.85));
+      }
+    } catch {}
+    await this.execCmd('volume', String(effective));
   }
 
   private async execCmd(cmd: string, val: string = ''): Promise<boolean> {

@@ -290,6 +290,89 @@
                 <p>Presence, bilgisayarında açık olan Discord uygulaması üzerinden çalışır (RPC). Token gerekmez.</p>
               </div>
             </div>
+
+            <!-- Discord Bot & Komut Entegrasyonu (v1.0.1) -->
+            <div class="settings-group">
+              <h3 class="settings-group-title">Discord Bot Entegrasyonu (.har / .harmonic)</h3>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Yerel Bot REST API Sunucusu</span>
+                  <span class="setting-desc">Discord botunun şarkı ve önerileri çekmesi için yerel portu (9863) açar</span>
+                </div>
+                <label class="toggle"><input type="checkbox" id="botServerEnabled" checked><span class="toggle-slider"></span></label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">API Durumu & Uç Noktası</span>
+                  <span class="setting-desc">http://127.0.0.1:9863/api/v1/state</span>
+                </div>
+                <span class="setting-value" id="botServerStatus">✓ Aktif (Port 9863)</span>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Özel Discord Application ID (İsteğe Bağlı)</span>
+                  <span class="setting-desc">Kendi Discord Bot Application ID'ni bağlayabilirsin</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="text" id="customDiscordAppId" placeholder="1545832861435830432 (Varsayılan)" style="width:170px;background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--c-text-1)">
+                  <button class="btn btn-ghost" id="btnSaveAppId" style="font-size:11px;padding:5px 10px">Kaydet</button>
+                </div>
+              </div>
+
+              <!-- Canlı Discord Embed Kart Önizlemesi (Görseldeki gibi) -->
+              <div style="margin-top:12px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                  <span style="font-size:12px;font-weight:600;color:var(--c-text-2)">Canlı Bot Mesajı Önizlemesi</span>
+                  <span style="font-size:11px;color:var(--c-text-3)">Komut: <code style="color:var(--c-accent)">.har</code> veya <code style="color:var(--c-accent)">.harmonic</code></span>
+                </div>
+                <div class="discord-preview-wrap">
+                  <div class="discord-chat-header">
+                    <span style="font-weight:700;color:#f2f3f5">serenity</span>
+                    <span class="discord-chat-cmd">.har</span>
+                    <span style="color:#80848e;font-size:11px">Bugün 16:20</span>
+                    <span class="discord-bot-badge">UYG</span>
+                    <span style="color:#5865f2;font-weight:600;font-size:12px">Harmonic Bot</span>
+                  </div>
+                  <div class="discord-embed-card">
+                    <div class="discord-embed-main">
+                      <div class="discord-embed-user">Şu anda dinliyor: <span id="previewUsername">serenity</span></div>
+                      <div class="discord-embed-title" id="previewTrackTitle">Ağlama Yar</div>
+                      <div class="discord-embed-artist" id="previewTrackArtist">Nurettin Rençber</div>
+                      <div class="discord-embed-album" id="previewTrackAlbum">Eski Yara</div>
+                      <div class="discord-embed-progress">
+                        <span id="previewCurrentTime">00:09</span>
+                        <div class="discord-bar-bg">
+                          <div class="discord-bar-fill" id="previewBarFill" style="width: 25%;">
+                            <div class="discord-bar-dot"></div>
+                          </div>
+                        </div>
+                        <span id="previewTotalTime">04:47</span>
+                      </div>
+                      <div class="discord-embed-recommendations">
+                        <div class="discord-rec-heading">ÖNERİLER</div>
+                        <div class="discord-rec-item"><span class="discord-rec-num">1</span> <span id="previewRec1">Söyle Sunam - Nurettin Rençber</span></div>
+                        <div class="discord-rec-item"><span class="discord-rec-num">2</span> <span id="previewRec2">İçimdeki Ateş - Nurettin Rençber</span></div>
+                        <div class="discord-rec-item"><span class="discord-rec-num">3</span> <span id="previewRec3">Yürürüm - Nurettin Rençber</span></div>
+                      </div>
+                    </div>
+                    <div class="discord-embed-thumb-wrap">
+                      <img id="previewTrackThumb" class="discord-embed-thumb" src="assets/icon.png" alt="Cover">
+                      <div class="discord-thumb-badge">Harmonic</div>
+                    </div>
+                  </div>
+                  <div class="discord-embed-buttons">
+                    <button class="discord-action-btn">Harmonic'te Aç ↗</button>
+                    <button class="discord-action-btn">Şarkı Sözleri</button>
+                  </div>
+                  <div class="discord-embed-buttons" style="margin-top:6px">
+                    <button class="discord-action-btn" id="previewBtnRec1">1. Söyle Sunam ↗</button>
+                    <button class="discord-action-btn" id="previewBtnRec2">2. İçimdeki Ateş ↗</button>
+                    <button class="discord-action-btn" id="previewBtnRec3">3. Yürürüm ↗</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div class="settings-group">
               <h3 class="settings-group-title">Discord Hesabı</h3>
               <div class="setting-row">
@@ -330,7 +413,7 @@
                 <div class="setting-label">
                   <span class="setting-name">Sürüm</span>
                 </div>
-                <span class="setting-value">v1.0.0</span>
+                <span class="setting-value">v1.0.1</span>
               </div>
               <div class="setting-row">
                 <div class="setting-label">

@@ -99,6 +99,13 @@ const api = {
       ipcRenderer.on('player:update', h);
       return () => ipcRenderer.removeListener('player:update', h);
     }
+  },
+
+  botServer: {
+    getState: () => ipcRenderer.invoke('botServer:getState'),
+    updateState: (data: any) => ipcRenderer.invoke('botServer:updateState', data),
+    toggle: (enable: boolean) => ipcRenderer.invoke('botServer:toggle', enable),
+    getStatus: () => ipcRenderer.invoke('botServer:getStatus'),
   }
 };
 

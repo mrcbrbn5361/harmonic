@@ -297,7 +297,7 @@
           <button class="icon-btn" id="closeChromeImport"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div class="modal-body" style="padding:16px 20px">
-          ${hasExt? `<div style="padding:10px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);margin-bottom:10px"><p style="margin:0;color:var(--c-text-1)"><strong>Zaten YouTube Music açık</strong> (Chrome PID 12028). Lütfen o tarayıcıda <strong>YouTube Music → sağ üst profil → Hesap değiştir</strong> ile istediğin hesaba geç, sonra buraya dönüp <strong>Girişi Aktar</strong>'a bas. Ayrı şifre ekranı açılmayacak.</p></div><p style="margin:0 0 8px;color:var(--c-text-2);font-size:12px">Not: İlk seferinde Harmonic giriş penceresi yerine mevcut Chrome'un kullanılacak, bu yüzden yeni şifre sormaz.</p>` : `<p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Ayrı bir <strong>YouTube Music giriş penceresi</strong> açıldı. Orada hesabınla giriş yap, ana sayfa yüklenince <strong>Girişi Aktar</strong>'a bas.</p>`}
+          ${hasExt? `<div style="padding:10px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);margin-bottom:10px"><p style="margin:0;color:var(--c-text-1)"><strong>Zaten YouTube Music açık</strong>. Lütfen o tarayıcıda <strong>YouTube Music → sağ üst profil → Hesap değiştir</strong> ile istediğin hesaba geç, sonra buraya dönüp <strong>Girişi Aktar</strong>'a bas. Ayrı şifre ekranı açılmayacak.</p></div><p style="margin:0 0 8px;color:var(--c-text-2);font-size:12px">Not: İlk seferinde Harmonic giriş penceresi yerine mevcut Chrome'un kullanılacak, bu yüzden yeni şifre sormaz.</p>` : `<p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Ayrı bir <strong>YouTube Music giriş penceresi</strong> açıldı. Orada hesabınla giriş yap, ana sayfa yüklenince <strong>Girişi Aktar</strong>'a bas.</p>`}
           <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">${hasExt?'Harici Chrome hesabı bekleniyor...':'Pencere açık, giriş bekleniyor...'}</div>
         </div>
         <div class="modal-footer">
@@ -399,7 +399,7 @@
 
       // Anlık arama - 1 karakterden itibaren
       if (query.length >= 1) {
-        clearTimeout(searchTimer);
+        if (searchTimer) clearTimeout(searchTimer);
         searchTimer = setTimeout(async () => {
           // Önce önerileri göster
           const suggestions = await ytSuggestions(query);
@@ -600,10 +600,11 @@
       });
       // Sağ tık menüsü
       row.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
+        const me = e as MouseEvent;
+        me.preventDefault();
         const id = (row as HTMLElement).dataset.id;
         const song = findSong(id);
-        if (song) showContextMenu(e.clientX, e.clientY, song);
+        if (song) showContextMenu(me.clientX, me.clientY, song);
       });
     });
     container.querySelectorAll('.like-btn').forEach((btn) => {
@@ -727,9 +728,6 @@
     // Gizli pencereden gelen metadata + playback state
     let _lastPollPlaying: boolean | null = null;
     let _pollCount = 0;
-    // Eşleşmeyen parça poll takibi (navigasyon takılması / YTM autoplay ayrımı)
-    let _mismatchVid = '';
-    let _mismatchCount = 0;
     // Parça-sonu tek seferlik tetikleme anahtarı + sonda donma sayacı + atlama anahtarı
     let _endedFor = '';
     let _endStallCount = 0;
@@ -821,6 +819,7 @@
         $('#scrubberThumb').style.left = `${pct}%`;
         $('#timeNow').textContent = formatTime(state.currentTime);
         $('#timeEnd').textContent = formatTime(state.duration);
+        syncBotServerAndLivePreview(u.title, u.artist, u.thumbnail, u.album);
       }
       // Play/pause state
       const incomingPlaying = !u.paused && !u.isAd;
@@ -932,6 +931,9 @@
   let requestedId = '';
   let _prevRequestedId = '';
   let _navRetryId = '';
+  // Eşleşmeyen parça poll takibi (navigasyon takılması / YTM autoplay ayrımı)
+  let _mismatchVid = '';
+  let _mismatchCount = 0;
   const DISCORD_REFRESH_MS = 30000;
   function updateDiscordForTrack(key: string, title: string, artist: string, coverUrl?: string, album?: string, force = false) {
     if (!key || !title) return;
@@ -961,12 +963,98 @@
       (payload as any).buttons = [{ label: "YouTube Music'te Aç", url: `https://music.youtube.com/watch?v=${key}` }];
     }
     api.discord.setActivity(payload).catch((e: any) => dlog('Discord hatası:', String(e)));
+    syncBotServerAndLivePreview(title, artist, coverUrl, album);
+  }
+
+  function syncBotServerAndLivePreview(title?: string, artist?: string, coverUrl?: string, album?: string) {
+    // 1. Canlı Discord Embed Kart Önizlemesi
+    const titleEl = $('#previewTrackTitle');
+    const artistEl = $('#previewTrackArtist');
+    const albumEl = $('#previewTrackAlbum');
+    const thumbEl = $('#previewTrackThumb') as HTMLImageElement;
+    const curTimeEl = $('#previewCurrentTime');
+    const totTimeEl = $('#previewTotalTime');
+    const barFillEl = $('#previewBarFill');
+    const rec1El = $('#previewRec1');
+    const rec2El = $('#previewRec2');
+    const rec3El = $('#previewRec3');
+    const btnRec1 = $('#previewBtnRec1');
+    const btnRec2 = $('#previewBtnRec2');
+    const btnRec3 = $('#previewBtnRec3');
+
+    const displayTitle = title || state.currentSong?.title || 'Ağlama Yar';
+    const displayArtist = artist || state.currentSong?.artist || 'Nurettin Rençber';
+    const displayAlbum = album || state.currentSong?.album || 'Eski Yara';
+    const displayCover = coverUrl || state.currentSong?.thumbnail || 'assets/icon.png';
+
+    if (titleEl) titleEl.textContent = displayTitle;
+    if (artistEl) artistEl.textContent = displayArtist;
+    if (albumEl) albumEl.textContent = displayAlbum;
+    if (thumbEl && displayCover) thumbEl.src = displayCover;
+
+    if (curTimeEl) curTimeEl.textContent = formatTime(state.currentTime);
+    if (totTimeEl) totTimeEl.textContent = formatTime(state.duration || 287);
+    if (barFillEl) {
+      const pct = (state.duration > 0) ? Math.min(100, Math.max(0, (state.currentTime / state.duration) * 100)) : 25;
+      barFillEl.style.width = `${pct}%`;
+    }
+
+    const upcoming = state.queue.slice(state.queueIndex + 1, state.queueIndex + 4);
+    if (rec1El && upcoming[0]) {
+      rec1El.textContent = `${upcoming[0].title} - ${upcoming[0].artist}`;
+      if (btnRec1) btnRec1.textContent = `1. ${upcoming[0].title} ↗`;
+    }
+    if (rec2El && upcoming[1]) {
+      rec2El.textContent = `${upcoming[1].title} - ${upcoming[1].artist}`;
+      if (btnRec2) btnRec2.textContent = `2. ${upcoming[1].title} ↗`;
+    }
+    if (rec3El && upcoming[2]) {
+      rec3El.textContent = `${upcoming[2].title} - ${upcoming[2].artist}`;
+      if (btnRec3) btnRec3.textContent = `3. ${upcoming[2].title} ↗`;
+    }
+
+    // 2. BotServer (Port 9863) State Güncelleme
+    if ((api as any).botServer) {
+      const recs = upcoming.map(s => ({
+        id: s.id,
+        title: s.title,
+        artist: s.artist,
+        thumbnail: s.thumbnail,
+        url: s.id ? `https://music.youtube.com/watch?v=${s.id}` : undefined
+      }));
+
+      (api as any).botServer.updateState({
+        status: state.playing ? 'playing' : (state.paused ? 'paused' : 'stopped'),
+        isPlaying: state.playing,
+        track: {
+          id: state.currentSong?.id,
+          title: displayTitle,
+          artist: displayArtist,
+          album: displayAlbum,
+          thumbnail: displayCover,
+          duration: state.duration,
+          durationFormatted: formatTime(state.duration),
+          currentTime: state.currentTime,
+          currentTimeFormatted: formatTime(state.currentTime),
+          progress: state.duration > 0 ? (state.currentTime / state.duration) : 0,
+          url: state.currentSong?.id ? `https://music.youtube.com/watch?v=${state.currentSong.id}` : undefined
+        },
+        recommendations: recs
+      }).catch(() => {});
+    }
   }
 
   function clearDiscordTrack() {
     lastDiscordKey = '';
     lastDiscordSentAt = 0;
     api.discord.clearActivity().catch(() => {});
+    if ((api as any).botServer) {
+      (api as any).botServer.updateState({
+        status: 'stopped',
+        isPlaying: false,
+        track: null
+      }).catch(() => {});
+    }
   }
 
   function maybeRefreshDiscord(key: string, title: string, artist: string, coverUrl?: string, album?: string) {
@@ -1068,11 +1156,17 @@
   }
 
   // Parça bitti (Spotify: repeat-one → baştan çal, yoksa sıradakine geç)
-  function handleTrackEnded() {
+  async function handleTrackEnded() {
     _mismatchVid = ''; _mismatchCount = 0;
     if (!state.currentSong) return;
     if (state.repeat === 'one') {
       playSong(state.currentSong);
+      return;
+    }
+    const autoPlay = await api.store.get('autoPlay').catch(() => true);
+    if (autoPlay === false && state.repeat === 'off' && state.queueIndex >= state.queue.length - 1) {
+      state.playing = false;
+      updatePlayIcon();
       return;
     }
     nextSong();
@@ -1207,6 +1301,7 @@ function updatePlayIcon() {
       <div class="ctx-item" data-action="addToQueue">Sıraya Ekle</div>
       <div class="ctx-separator"></div>
       <div class="ctx-item" data-action="addToLiked">${state.liked.has(song.id) ? 'Beğeniyi Kaldır' : 'Beğeniye Ekle'}</div>
+      <div class="ctx-item" data-action="addToPlaylist">Çalma Listesine Ekle...</div>
       <div class="ctx-separator"></div>
       <div class="ctx-item" data-action="copyLink">Bağlantıyı Kopyala</div>
     `;
@@ -1250,6 +1345,33 @@ function updatePlayIcon() {
         case 'addToLiked':
           toggleLike(song.id);
           break;
+        case 'addToPlaylist': {
+          (async () => {
+            const playlists = await api.store.get('playlists') || [];
+            if (!playlists.length) {
+              showToast('Önce sol menüden bir çalma listesi oluşturun', 'warning');
+              return;
+            }
+            const plNames = playlists.map((p: any, idx: number) => `${idx + 1}: ${p.name}`).join('\n');
+            const choice = prompt(`Hangi listeye eklensin? (Numara girin):\n${plNames}`);
+            if (choice) {
+              const num = parseInt(choice.trim(), 10);
+              if (!isNaN(num) && num >= 1 && num <= playlists.length) {
+                const targetPl = playlists[num - 1];
+                targetPl.songs = targetPl.songs || [];
+                if (!targetPl.songs.some((s: any) => s.id === song.id)) {
+                  targetPl.songs.push(song);
+                  await api.store.set('playlists', playlists);
+                  showToast(`"${song.title}" -> "${targetPl.name}" listesine eklendi`, 'success');
+                  if (state.page === 'library') loadLibrary();
+                } else {
+                  showToast('Şarkı bu listede zaten var', 'info');
+                }
+              }
+            }
+          })();
+          break;
+        }
         case 'copyLink':
           navigator.clipboard?.writeText(`https://music.youtube.com/watch?v=${song.id}`);
           showToast('Bağlantı kopyalandı', 'success');
@@ -1499,61 +1621,91 @@ function updatePlayIcon() {
     if (gen !== state.navGeneration) return; // stale, discard
 
     let html = '';
+    const tab = state.libraryTab || 'recent';
 
-    // Son Çalınanlar
-    if (localRecent.length) {
-      html += `<div style="margin-bottom:24px">
-        <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Son Çalınanlar</h3>
-        <div class="song-list">${localRecent.slice(0, 20).map((s, i) => songRow(s, i + 1)).join('')}</div>
-      </div>`;
+    // 1. Son Çalınanlar
+    if (tab === 'recent' || tab === 'songs') {
+      if (localRecent.length) {
+        html += `<div style="margin-bottom:24px">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">${tab === 'recent' ? 'Son Çalınanlar' : 'Kütüphane Şarkıları'}</h3>
+          <div class="song-list">${localRecent.slice(0, 30).map((s, i) => songRow(s, i + 1)).join('')}</div>
+        </div>`;
+      }
     }
 
-    // YouTube Music Playlist'leri
-    if (ytPlaylists.length) {
-      html += `<div style="margin-bottom:24px">
-        <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Oynatma Listeleri</h3>
-        <div class="card-grid">${ytPlaylists.map(pl => `
-          <div class="card" data-browse="${pl.browseId}" style="cursor:pointer">
-            <img class="card-thumb" src="${pl.thumbnail}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${pl.title}</div>
-          </div>`).join('')}</div>
-      </div>`;
+    // 2. Çalma Listeleri
+    if (tab === 'playlists') {
+      const localPlaylists = await api.store.get('playlists') || [];
+      if (localPlaylists.length) {
+        html += `<div style="margin-bottom:24px">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Özel Listelerim</h3>
+          <div class="card-grid">${localPlaylists.map((pl: any) => `
+            <div class="card" data-local-pl="${pl.id}" style="cursor:pointer">
+              <div class="card-thumb" style="background:var(--c-bg-3);display:flex;align-items:center;justify-content:center;color:var(--c-accent)">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              </div>
+              <div class="card-title">${escapeHtml(pl.name)}</div>
+              <div class="card-sub">${(pl.songs || []).length} şarkı</div>
+            </div>`).join('')}</div>
+        </div>`;
+      }
+
+      if (ytPlaylists.length) {
+        html += `<div style="margin-bottom:24px">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">YouTube Music Listeleri</h3>
+          <div class="card-grid">${ytPlaylists.map(pl => `
+            <div class="card" data-browse="${pl.browseId}" style="cursor:pointer">
+              <img class="card-thumb" src="${pl.thumbnail}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
+              <div class="card-title">${escapeHtml(pl.title)}</div>
+            </div>`).join('')}</div>
+        </div>`;
+      }
     }
 
-    // Sanatçılar
-    if (ytArtists.length) {
+    // 3. Albümler
+    if (tab === 'albums') {
+      if (ytAlbums.length) {
+        html += `<div style="margin-bottom:24px">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3>
+          <div class="card-grid">${ytAlbums.map(a => `
+            <div class="card" data-browse="${a.browseId}" style="cursor:pointer">
+              <img class="card-thumb" src="${a.thumbnail}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
+              <div class="card-title">${escapeHtml(a.title)}</div>
+              <div class="card-sub">${escapeHtml(a.artist || '')}</div>
+            </div>`).join('')}</div>
+        </div>`;
+      }
+    }
+
+    // Sanatçılar (genel kütüphanede veya albümler/listeler yokken destekleyici)
+    if (ytArtists.length && tab === 'albums') {
       html += `<div style="margin-bottom:24px">
         <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3>
         <div class="card-grid">${ytArtists.map(a => `
           <div class="card" data-browse="${a.browseId}" style="cursor:pointer">
             <img class="card-thumb" src="${a.thumbnail}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${a.name}</div>
-          </div>`).join('')}</div>
-      </div>`;
-    }
-
-    // Albümler
-    if (ytAlbums.length) {
-      html += `<div style="margin-bottom:24px">
-        <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3>
-        <div class="card-grid">${ytAlbums.map(a => `
-          <div class="card" data-browse="${a.browseId}" style="cursor:pointer">
-            <img class="card-thumb" src="${a.thumbnail}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${a.title}</div>
-            <div class="card-sub">${a.artist || ''}</div>
+            <div class="card-title">${escapeHtml(a.name)}</div>
           </div>`).join('')}</div>
       </div>`;
     }
 
     if (!html) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><p class="empty-text">Henüz bir şey eklenmemiş</p><p class="empty-hint-text">Giriş yaparak YouTube Music kütüphanenizi görebilirsiniz</p></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><p class="empty-text">Bu sekmede henüz içerik yok</p><p class="empty-hint-text">Müzik dinledikçe veya listeler oluşturdukça burada görünecek</p></div>';
       return;
     }
 
     container.innerHTML = html;
     attachSongEvents(container);
 
-    // Kartlara tıklama
+    // Özel liste kartlarına tıklama
+    container.querySelectorAll('.card[data-local-pl]').forEach((card) => {
+      card.addEventListener('click', () => {
+        const plId = (card as HTMLElement).dataset.localPl;
+        if (plId) openLocalPlaylist(plId);
+      });
+    });
+
+    // YouTube kartlarına tıklama
     container.querySelectorAll('.card[data-browse]').forEach((card) => {
       card.addEventListener('click', async () => {
         const browseId = (card as HTMLElement).dataset.browse;
@@ -1767,9 +1919,86 @@ function updatePlayIcon() {
     container.innerHTML = playlists.map((pl: any) => `
       <a class="nav-link" href="#" data-pl="${pl.id}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        <span>${pl.name}</span>
+        <span>${escapeHtml(pl.name)}</span>
       </a>
     `).join('');
+
+    container.querySelectorAll('.nav-link[data-pl]').forEach((link) => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        const plId = (link as HTMLElement).dataset.pl;
+        if (plId) openLocalPlaylist(plId);
+      });
+    });
+  }
+
+  async function openLocalPlaylist(plId: string) {
+    const playlists = await api.store.get('playlists') || [];
+    const pl = playlists.find((p: any) => p.id === plId);
+    if (!pl) return;
+
+    state.page = 'library';
+    state.libraryTab = 'playlists';
+    $$('.nav-link').forEach((l) => {
+      l.classList.toggle('active', (l as HTMLElement).dataset.page === 'library');
+    });
+    $$('.page').forEach((p) => {
+      (p as HTMLElement).classList.toggle('active', (p as HTMLElement).dataset.page === 'library');
+    });
+    $$('#libraryTabs .tab').forEach((t) => {
+      t.classList.toggle('active', (t as HTMLElement).dataset.tab === 'playlists');
+    });
+
+    const container = $('#libraryContent');
+    const songs: Song[] = pl.songs || [];
+
+    let html = `
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">
+          <div>
+            <h2 style="font-size:22px;font-weight:700;color:var(--c-text-0);margin:0 0 4px">${escapeHtml(pl.name)}</h2>
+            <p style="margin:0;color:var(--c-text-2);font-size:13px">${songs.length} şarkı • Özel Çalma Listesi</p>
+          </div>
+          <div style="display:flex;gap:8px">
+            ${songs.length ? `<button class="btn btn-primary" id="btnPlayPlaylist" style="display:flex;align-items:center;gap:6px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Çal
+            </button>` : ''}
+            <button class="btn btn-ghost" id="btnDeletePlaylist" style="color:var(--c-error)">Listeyi Sil</button>
+          </div>
+        </div>
+    `;
+
+    if (songs.length) {
+      html += `<div class="song-list">${songs.map((s, i) => songRow(s, i + 1)).join('')}</div></div>`;
+    } else {
+      html += `
+        <div class="empty-state">
+          <p class="empty-text">Bu listede henüz şarkı yok</p>
+          <p class="empty-hint-text">Şarkılara sağ tıklayıp "Çalma Listesine Ekle..." seçeneğiyle ekleyebilirsiniz.</p>
+        </div></div>`;
+    }
+
+    container.innerHTML = html;
+    attachSongEvents(container);
+
+    container.querySelector('#btnPlayPlaylist')?.addEventListener('click', () => {
+      if (songs.length) {
+        setContext(songs, pl.name, 'playlist');
+        state.queueIndex = 0;
+        playSong(songs[0]);
+      }
+    });
+
+    container.querySelector('#btnDeletePlaylist')?.addEventListener('click', async () => {
+      if (confirm(`"${pl.name}" listesini silmek istediğinize emin misiniz?`)) {
+        const updated = playlists.filter((p: any) => p.id !== plId);
+        await api.store.set('playlists', updated);
+        showToast(`"${pl.name}" listesi silindi`, 'info');
+        renderPlaylists();
+        loadLibrary();
+      }
+    });
   }
 
   // ── Settings ───────────────────────────────
@@ -1883,6 +2112,38 @@ function updatePlayIcon() {
       refreshDiscordAccount();
       showToast('Discord çıkışı yapıldı.', 'info');
     });
+
+    // Bot Server (Port 9863) Ayarı (v1.0.1)
+    const botServerToggle = $('#botServerEnabled') as HTMLInputElement;
+    const botServerStatus = $('#botServerStatus');
+    if (botServerToggle && (api as any).botServer) {
+      api.store.get('botServerEnabled').then((v: any) => {
+        botServerToggle.checked = v !== false;
+      });
+      botServerToggle.addEventListener('change', async () => {
+        const active = await (api as any).botServer.toggle(botServerToggle.checked);
+        if (botServerStatus) {
+          botServerStatus.textContent = active ? '✓ Aktif (Port 9863)' : 'Kapalı';
+        }
+      });
+    }
+
+    // Özel Discord Application ID
+    const customAppIdInput = $('#customDiscordAppId') as HTMLInputElement;
+    const btnSaveAppId = $('#btnSaveAppId');
+    if (customAppIdInput && btnSaveAppId) {
+      api.store.get('customDiscordAppId').then((v: any) => {
+        if (v) customAppIdInput.value = v;
+      });
+      btnSaveAppId.addEventListener('click', async () => {
+        const val = customAppIdInput.value.trim();
+        await api.store.set('customDiscordAppId', val);
+        showToast('Discord Application ID kaydedildi.', 'success');
+      });
+    }
+
+    // Başlangıçta önizlemeyi doldur
+    syncBotServerAndLivePreview();
   }
 
   // ── Init ───────────────────────────────────

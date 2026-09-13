@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+
 const BASE_URL = 'https://music.youtube.com/youtubei/v1';
 
 interface YTClient {
@@ -84,6 +86,8 @@ export class YouTubeAPI {
   private client: YTClient;
   private visitorData = '';
   private accessToken: string | null = null;
+  private cookies: string | null = null;
+  private cookieProvider: (() => Promise<string> | string) | null = null;
 
   constructor() {
     this.client = { ...WEB_REMIX };
@@ -91,6 +95,14 @@ export class YouTubeAPI {
 
   setAccessToken(token: string | null): void {
     this.accessToken = token;
+  }
+
+  setCookies(cookies: string | null): void {
+    this.cookies = cookies;
+  }
+
+  setCookieProvider(provider: (() => Promise<string> | string) | null): void {
+    this.cookieProvider = provider;
   }
 
   private async request<T = Record<string, unknown>>(endpoint: string, body: Record<string, unknown>): Promise<T> {
@@ -113,6 +125,35 @@ export class YouTubeAPI {
       'Origin': 'https://music.youtube.com',
       'Referer': 'https://music.youtube.com/'
     };
+
+    let cookieStr = this.cookies || '';
+    if (this.cookieProvider) {
+      try {
+        const provStr = await this.cookieProvider();
+        if (provStr) cookieStr = provStr;
+      } catch (err) {
+        console.warn('[YT] Cookie provider failed:', err);
+      }
+    }
+
+    if (cookieStr) {
+      headers['Cookie'] = cookieStr;
+      headers['X-Origin'] = 'https://music.youtube.com';
+      headers['X-Goog-AuthUser'] = '0';
+
+      const sapisidMatch = cookieStr.match(/(?:^|;\s*)(?:SAPISID|__Secure-3PAPISID)=([^;]+)/);
+      if (sapisidMatch && !this.accessToken) {
+        const sapisid = sapisidMatch[1];
+        const origin = 'https://music.youtube.com';
+        const timestamp = Math.floor(Date.now() / 1000);
+        const hash = crypto.createHash('sha1').update(`${timestamp} ${sapisid} ${origin}`).digest('hex');
+        headers['Authorization'] = `SAPISIDHASH ${timestamp}_${hash}`;
+      }
+    }
+
+    if (this.accessToken) {
+      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    }
 
     const res = await fetch(`${BASE_URL}/${endpoint}`, {
       method: 'POST',

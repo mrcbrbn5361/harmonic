@@ -8,7 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" crossorigin href="./assets/style-Cic0-wZq.css">
+  <script type="module" crossorigin src="./assets/main-Ccfr-kx0.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/main-oBXfK6s8.css">
 </head>
 <body>
   <nav class="navbar">
@@ -19,6 +20,7 @@
       </a>
       <div class="nav-links">
         <a href="ozellikler.html">Özellikler</a>
+        <a href="discord-bot.html">Discord Bot</a>
         <a href="indir.html">İndir</a>
         <a href="sss.html">SSS</a>
       </div>
@@ -34,7 +36,7 @@
   <section class="hero">
     <div class="container">
       <div class="hero-content">
-        <div class="hero-badge">v1.0.0 - İlk Sürüm</div>
+        <div class="hero-badge">v1.0.1 - Discord Bot & REST API Desteği</div>
         <h1>Müzik Dinleme<br><span class="highlight">Deneyiminizi</span> Dönüştürün</h1>
         <p class="hero-description">
           Harmonic ile YouTube Music'i Windows 11 bilgisayarınızda reklamsız, arka plan oynatma desteğiyle ve zengin özelliklerle kullanın.
@@ -126,6 +128,54 @@
       <div style="text-align:center;margin-top:32px">
         <a href="ozellikler.html" class="btn btn-secondary">Tüm Özellikleri Gör →</a>
       </div>
+
+      <!-- Discord Bot Tanıtım Vitrini (v1.0.1) -->
+      <div style="margin-top:64px;background:linear-gradient(135deg,rgba(88,101,242,.12) 0%,rgba(35,165,90,.08) 100%);border:1px solid rgba(88,101,242,.25);border-radius:20px;padding:36px;display:grid;grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));gap:36px;align-items:center;">
+        <div>
+          <div style="display:inline-flex;align-items:center;gap:6px;background:#5865f2;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">YENİ v1.0.1</div>
+          <h2 style="font-size:28px;font-weight:800;margin-bottom:12px;letter-spacing:-.02em">Discord Botunuzda Şarkınızı Paylaşın (.har / .harmonic)</h2>
+          <p style="color:var(--text-secondary);font-size:15px;line-height:1.6;margin-bottom:20px">
+            Arkadaşlarınız Discord botunuza <code>.har</code> veya <code>.harmonic</code> yazdığında; dinlediğiniz şarkı, kapak resmi, ilerleme çubuğu ve önerilen parçalar zengin bir Discord embed kartı ile anında paylaşılsın!
+          </p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <a href="discord-bot.html" class="btn btn-primary">Bot Dökümantasyonu & Kodlar →</a>
+            <a href="indir.html" class="btn btn-secondary">Harmonic v1.0.1 İndir</a>
+          </div>
+        </div>
+        <div>
+          <!-- Mini Mockup Box -->
+          <div class="discord-mockup-container" style="margin:0;box-shadow:0 12px 36px rgba(0,0,0,.4)">
+            <div class="discord-user-line">
+              <span class="discord-user-name">serenity</span>
+              <span class="discord-tag">AQUA</span>
+              <span class="discord-msg-cmd">.har</span>
+            </div>
+            <div class="discord-embed-box" style="padding:10px 12px">
+              <div class="discord-embed-info">
+                <div class="discord-embed-listening" style="font-size:10px">Şu anda dinliyor: serenity</div>
+                <div class="discord-embed-track" style="font-size:15px">Ağlama Yar</div>
+                <div class="discord-embed-sub" style="font-size:12px">Nurettin Rençber</div>
+                <div class="discord-bar-wrap" style="margin-top:6px;font-size:10px">
+                  <span>00:09</span>
+                  <div class="discord-line-track"><div class="discord-line-current" style="width:25%"><div class="discord-line-dot"></div></div></div>
+                  <span>04:47</span>
+                </div>
+                <div class="discord-rec-box" style="margin-top:6px;padding-top:6px;font-size:11px">
+                  <div class="discord-rec-title" style="font-size:10px">ÖNERİLER: 1. Söyle Sunam • 2. İçimdeki Ateş</div>
+                </div>
+              </div>
+              <div class="discord-thumb-side" style="width:70px;height:70px">
+                <img src="./assets/icon.png" alt="Cover" class="discord-thumb-img">
+                <div class="discord-badge-pill" style="font-size:8px">Harmonic</div>
+              </div>
+            </div>
+            <div class="discord-btn-grid" style="margin-top:6px">
+              <button class="discord-ui-btn" style="font-size:11px;padding:4px 8px">Harmonic'te Aç ↗</button>
+              <button class="discord-ui-btn" style="font-size:11px;padding:4px 8px">Şarkı Sözleri</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -145,6 +195,7 @@
           <div class="footer-column">
             <h4>Ürün</h4>
             <a href="ozellikler.html">Özellikler</a>
+            <a href="discord-bot.html">Discord Bot</a>
             <a href="indir.html">İndir</a>
           </div>
           <div class="footer-column">
@@ -167,6 +218,5 @@
       </div>
     </div>
   </footer>
-  <script src="./js/main.js"></script>
 </body>
 </html>

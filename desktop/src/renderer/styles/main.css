@@ -1401,3 +1401,220 @@ input, textarea { user-select: text; }
   .page-scroll { padding: 0 16px 16px; }
   .card-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
 }
+
+/* ============================================
+   Discord Bot & Embed Preview Card (v1.0.1)
+   ============================================ */
+.discord-preview-wrap {
+  margin-top: 14px;
+  padding: 14px;
+  background: #1e1f22;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: 'gg sans', 'Noto Sans', 'Segoe UI', sans-serif;
+  color: #dbdee1;
+}
+
+.discord-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #949ba4;
+}
+
+.discord-chat-cmd {
+  color: #00a8fc;
+  font-weight: 500;
+  background: rgba(0, 168, 252, 0.1);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.discord-bot-badge {
+  background: #5865f2;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.discord-embed-card {
+  display: flex;
+  background: #2b2d31;
+  border-radius: 6px;
+  border-left: 4px solid #23a55a;
+  padding: 12px 14px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.discord-embed-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.discord-embed-user {
+  font-size: 11px;
+  font-weight: 600;
+  color: #949ba4;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.discord-embed-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #f2f3f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.discord-embed-artist {
+  font-size: 13px;
+  font-weight: 600;
+  color: #dbdee1;
+}
+
+.discord-embed-album {
+  font-size: 12px;
+  color: #949ba4;
+}
+
+.discord-embed-thumb-wrap {
+  margin-left: 14px;
+  position: relative;
+  width: 84px;
+  height: 84px;
+  flex-shrink: 0;
+}
+
+.discord-embed-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.discord-thumb-badge {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #23a55a;
+  color: #000;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 12px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+
+.discord-embed-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #949ba4;
+}
+
+.discord-bar-bg {
+  flex: 1;
+  height: 4px;
+  background: #3b3e45;
+  border-radius: 2px;
+  position: relative;
+  overflow: visible;
+}
+
+.discord-bar-fill {
+  height: 100%;
+  background: #23a55a;
+  border-radius: 2px;
+  position: relative;
+  width: 25%;
+}
+
+.discord-bar-dot {
+  position: absolute;
+  right: -4px;
+  top: -3px;
+  width: 10px;
+  height: 10px;
+  background: #23a55a;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #23a55a;
+}
+
+.discord-embed-recommendations {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.discord-rec-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: #949ba4;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.discord-rec-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #dbdee1;
+  padding: 2px 0;
+}
+
+.discord-rec-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: #23a55a;
+  color: #000;
+  font-size: 10px;
+  font-weight: 800;
+  border-radius: 50%;
+}
+
+.discord-embed-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.discord-action-btn {
+  background: #2b2d31;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #dbdee1;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: background 0.15s ease;
+}
+
+.discord-action-btn:hover {
+  background: #35373c;
+  color: #fff;
+}
