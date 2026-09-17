@@ -1,5 +1,8 @@
 import { BrowserWindow, session } from 'electron';
-import { MUSIC_PARTITION, CHROME_UA } from '../auth/music-auth';
+import { MUSIC_PARTITION } from '../auth/music-auth';
+import { CHROME_UA, YT_CLIENT_VERSION } from './client-versions';
+import { logger } from '../utils/logger';
+import { volumeRatioProvider } from '../providers/volume-ratio';
 
 // ── Gizli oynatıcı (artık tüm playback buradan) ─
 // YouTube Music watch sayfasını gizli bir pencerede açarız.
@@ -17,7 +20,8 @@ const AD_BLOCK_PATTERNS = [
   '*://*.googletagservices.com/*',
   '*://*.2mdn.net/*',
   '*://*.moatads.com/*',
-  '*://adservice.google.*/*',
+  '*://adservice.google.com/*',
+  '*://adservice.google.com.tr/*',
   '*://*.youtube-nocookie.com/*',
   '*://*.youtube.com/pagead/*',
   '*://music.youtube.com/pagead/*',
@@ -40,9 +44,11 @@ interface PlaybackUpdate {
   src: string;
   // YT player durumu: -1 başlamadı, 0 bitti, 1 oynuyor, 2 duraklatıldı, 3 tamponlanıyor
   playerState?: number;
+  ended?: boolean;
 }
 
 type UpdateListener = (u: PlaybackUpdate) => void;
+type ErrorListener = (msg: string) => void;
 
 // Shadow DOM derin araması + video element bulma + metadata.
 // ÖNCE YouTube'un resmi movie_player API'si denenir (en güvenilir yol),
@@ -69,6 +75,18 @@ const RESOLVE_MEDIA_JS = `(() => {
     const mp = findPlayer();
     const hasApi = !!(mp && typeof mp.getPlayerState === 'function');
 
+    // Hook onStateChange once per page to catch instant ended transition (0ms latency)
+    if (mp && !window.__hmpHooked) {
+      window.__hmpHooked = true;
+      try {
+        if (typeof mp.addEventListener === 'function') {
+          mp.addEventListener('onStateChange', (s) => {
+            if (s === 0) window.__hEnded = true;
+          });
+        }
+      } catch {}
+    }
+
     // --- 1) movie_player API yolu (tercih edilen) ---
     if (hasApi) {
       let isAd = false;
@@ -86,12 +104,15 @@ const RESOLVE_MEDIA_JS = `(() => {
         if (el) src = el.currentSrc || el.src || '';
       } catch {}
       const vid = (vd && vd.video_id) || '';
+      const hasEnded = !!window.__hEnded || pstate === 0;
+      if (window.__hEnded) window.__hEnded = false;
       return {
         ok: true, via: 'api',
         currentTime: cur || 0,
         duration: dur || 0,
         paused: pstate !== 1,
         playerState: pstate,
+        ended: hasEnded,
         isAd,
         src,
         title: (vd && vd.title) || '',
@@ -123,6 +144,10 @@ const RESOLVE_MEDIA_JS = `(() => {
     };
     const el = getMedia();
     if (!el) return { ok: false };
+    if (el && !el.__hEndedHooked) {
+      el.__hEndedHooked = true;
+      try { el.addEventListener('ended', () => { window.__hEnded = true; }); } catch {}
+    }
     let isAd = false;
     if (mp && mp.classList && mp.classList.contains('ad-showing')) isAd = true;
 
@@ -179,11 +204,16 @@ const RESOLVE_MEDIA_JS = `(() => {
       if (ogImg && ogImg.content) thumbnail = ogImg.content;
     }
 
+    const hasEnded = !!window.__hEnded || (el ? el.ended : false);
+    if (window.__hEnded) window.__hEnded = false;
+
     return {
       ok: true,
       currentTime: el.currentTime || 0,
       duration: el.duration || 0,
       paused: el.paused,
+      playerState: el.paused ? 2 : (hasEnded ? 0 : 1),
+      ended: hasEnded,
       isAd,
       src: el.currentSrc || el.src || '',
       title,
@@ -197,8 +227,10 @@ export class StreamResolver {
   private win: BrowserWindow | null = null;
   private queue: Promise<void> = Promise.resolve();
   private currentVideoId = '';
+  private loadingVideoId = '';
   private pollTimer: any = null;
   private listeners: Set<UpdateListener> = new Set();
+  private errorListeners: Set<ErrorListener> = new Set();
   private volume = 0.8;
   private _loggedNoMedia = false;
   // YT Music bazen otomatik resume ediyor — kullanıcı isteğini hatırla
@@ -221,9 +253,9 @@ export class StreamResolver {
     try {
       const ses = session.fromPartition(MUSIC_PARTITION);
       ses.webRequest.onBeforeRequest({ urls: AD_BLOCK_PATTERNS }, (_details, cb) => cb({ cancel: true }));
-      console.log('[Adblock] Reklam domain blokajı aktif');
+      logger.debug('[Adblock] Reklam domain blokajı aktif');
     } catch (e: any) {
-      console.error('[Adblock] Kurulum hatası:', e?.message || e);
+      logger.error('[Adblock] Kurulum hatası:', e?.message || e);
     }
   }
 
@@ -246,7 +278,7 @@ export class StreamResolver {
         additionalArguments: ['--disable-gpu', '--disable-gpu-compositing']
       }
     });
-    this.win.webContents.setAudioMuted(false);
+    this.win.webContents.setAudioMuted(this.volume === 0);
     this.win.webContents.setUserAgent(CHROME_UA);
     this.win.webContents.on('before-input-event', (e) => e.preventDefault());
     // Reklam overlay CSS'i (pencere başına bir kez)
@@ -256,8 +288,9 @@ export class StreamResolver {
         try { this.win?.webContents.insertCSS(ADHIDE_CSS).catch(() => {}); } catch {}
       });
     }
-    // Yükleme bitince metadata çekmeyi dene
+    // Yükleme bitince sesi tekrar uygula ve metadata çek
     this.win.webContents.on('did-finish-load', () => {
+      this.setVolume(this.volume).catch(() => {});
       setTimeout(() => this.pollOnce(), 500);
     });
     // İlk yükleme: ana sayfa
@@ -270,6 +303,23 @@ export class StreamResolver {
   onUpdate(cb: UpdateListener): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
+  }
+
+  // Gerçek oynatma hataları (kuyruk/yükleme) — main bunu renderer'a iletir (bk. M-02).
+  onError(cb: ErrorListener): () => void {
+    this.errorListeners.add(cb);
+    return () => this.errorListeners.delete(cb);
+  }
+
+  isUsable(): boolean {
+    return !this._destroyed;
+  }
+
+  private emitError(msg: string) {
+    logger.error('[Player]', msg);
+    for (const cb of this.errorListeners) {
+      try { cb(msg); } catch {}
+    }
   }
 
   private emit(u: PlaybackUpdate) {
@@ -303,9 +353,10 @@ export class StreamResolver {
     } catch {}
   }
 
-  // Reklam bitti: sesi ve hızı normale döndür
+  // Reklam bitti: sesi ve hızı normale döndür (eğer kullanıcı sesi 0 yaptıysa sessiz kal)
   private onAdEnd(): void {
-    try { this.win?.webContents.setAudioMuted(false); } catch {}
+    try { this.win?.webContents.setAudioMuted(this.volume === 0); } catch {}
+    this.setVolume(this.volume).catch(() => {});
     try {
       this.win?.webContents.executeJavaScript(
         `(() => { try { const v = document.querySelector('video'); if (v && v.playbackRate !== 1) v.playbackRate = 1; } catch {} try { const mp = document.getElementById('movie_player'); if (mp && mp.setPlaybackRate) mp.setPlaybackRate(1); } catch {} return true; })()`,
@@ -325,11 +376,21 @@ export class StreamResolver {
     try {
       const st: any = await win.webContents.executeJavaScript(RESOLVE_MEDIA_JS, true);
       if (st && st.ok) {
+        // Yeni bir şarkıya geçiş esnasında eski videonun bilgileri geliyorsa yok say
+        if (this.loadingVideoId) {
+          if (st.videoId && st.videoId !== this.loadingVideoId) {
+            return;
+          }
+          if (st.videoId === this.loadingVideoId) {
+            this.loadingVideoId = '';
+          }
+        }
+
         // Gerçek çalan id (autoplay/geçiş takibi için) — yoksa istenen id
         const actualId: string = st.videoId || this.currentVideoId;
-        // Emit on paused/time/title/isAd/videoId/playerState change — metadata ve bitiş gecikmesin
+        // Emit on paused/time/title/isAd/videoId/playerState/ended change — metadata ve bitiş gecikmesin
         const lastEmitted = this.lastEmittedState;
-        if (!lastEmitted || lastEmitted.paused !== st.paused || lastEmitted.currentTime !== st.currentTime || lastEmitted.title !== st.title || lastEmitted.isAd !== st.isAd || lastEmitted.duration !== st.duration || lastEmitted.videoId !== actualId || lastEmitted.playerState !== st.playerState) {
+        if (!lastEmitted || lastEmitted.paused !== st.paused || lastEmitted.currentTime !== st.currentTime || lastEmitted.title !== st.title || lastEmitted.isAd !== st.isAd || lastEmitted.duration !== st.duration || lastEmitted.videoId !== actualId || lastEmitted.playerState !== st.playerState || st.ended) {
           this.lastEmittedState = { ...st, videoId: actualId };
           if (this.userWantsPaused && !st.paused) {
             try {
@@ -347,7 +408,8 @@ export class StreamResolver {
             paused: !!st.paused,
             isAd: !!st.isAd,
             src: st.src || '',
-            playerState: typeof st.playerState === 'number' ? st.playerState : undefined
+            playerState: typeof st.playerState === 'number' ? st.playerState : undefined,
+            ended: !!st.ended
           });
         }
       }
@@ -371,7 +433,7 @@ export class StreamResolver {
       const ses = session.fromPartition('persist:harmonic');
       const cookies = await ses.cookies.get({ url: 'https://music.youtube.com' });
       if (!cookies.length) {
-        console.error('[Auth] profil: cookie yok');
+        logger.error('[Auth] profil: cookie yok');
         return null;
       }
       const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
@@ -382,14 +444,14 @@ export class StreamResolver {
           'Cookie': cookieHeader,
           'Origin': 'https://music.youtube.com',
           'Referer': 'https://music.youtube.com/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36'
+          'User-Agent': CHROME_UA
         },
         body: JSON.stringify({
-          context: { client: { hl: 'tr', gl: 'TR', clientName: 'WEB_REMIX', clientVersion: '1.20241001.00.00' } }
+          context: { client: { hl: 'tr', gl: 'TR', clientName: 'WEB_REMIX', clientVersion: YT_CLIENT_VERSION } }
         })
       });
       if (!res.ok) {
-        console.error('[Auth] profil API HTTP:', res.status);
+        logger.error('[Auth] profil API HTTP:', res.status);
         return null;
       }
       const data: any = await res.json();
@@ -418,11 +480,11 @@ export class StreamResolver {
         const email = runsText(item.accountBylineText) || runsText(item.accountEmail) || '';
         // "Guide" gibi geçersiz isimleri filtrele
         if (name && name !== 'Guide' && name.length > 1 && !/^guide|hamburger|menu$/i.test(name)) {
-          console.log('[Auth] profil bulundu:', name || email);
+          logger.debug('[Auth] profil bulundu:', name || email);
           return { name, email, picture };
         }
         if (email) {
-          console.log('[Auth] profil bulundu (email):', email);
+          logger.debug('[Auth] profil bulundu (email):', email);
           return { name: '', email, picture };
         }
       }
@@ -434,13 +496,13 @@ export class StreamResolver {
       const emailMatch = raw.match(/"accountEmail":\s*\{\s*"simpleText":\s*"((?:[^"\\]|\\.)*)"/);
       const email = emailMatch ? emailMatch[1] : '';
       if ((name && name !== 'Guide' && name.length > 1) || email) {
-        console.log('[Auth] profil bulundu (regex):', name || email);
+        logger.debug('[Auth] profil bulundu (regex):', name || email);
         return { name: (name === 'Guide') ? '' : name, email, picture: '' };
       }
-      console.error('[Auth] profil bulunamadı');
+      logger.error('[Auth] profil bulunamadı');
       return null;
     } catch (e: any) {
-      console.error('[Auth] profil hatası:', e?.message || e);
+      logger.error('[Auth] profil hatası:', e?.message || e);
       return null;
     }
   }
@@ -448,7 +510,7 @@ export class StreamResolver {
   // Şarkıyı oynat — sıralı kuyruk
   play(videoId: string): Promise<void> {
     this.queue = this.queue.then(() => this.doPlay(videoId)).catch((e) => {
-      console.error('[Player] play kuyruk hatası:', e?.message || e);
+      this.emitError(`Oynatma kuyruk hatası: ${e?.message || e}`);
     });
     return this.queue;
   }
@@ -456,6 +518,8 @@ export class StreamResolver {
   private async doPlay(videoId: string): Promise<void> {
     if (!videoId) return;
     this.currentVideoId = videoId;
+    this.loadingVideoId = videoId;
+    this.lastEmittedState = null;
     this.userWantsPaused = false;
     let win: BrowserWindow;
     try {
@@ -473,7 +537,12 @@ export class StreamResolver {
         await new Promise((r) => setTimeout(r, 1500));
       }
     }
-    if (!loaded) return;
+    if (!loaded) {
+      this.emitError('Şarkı yüklenemedi (3 deneme başarısız)');
+      return;
+    }
+    // Yeni yüklenen sayfaya kullanıcının ses düzeyini hemen uygula
+    this.setVolume(this.volume).catch(() => {});
     this.startPolling();
     // İlk birkaç saniye boyunca play tetikle (autoplay bazen bloklanır)
     // Ama video zaten oynuyorsa (state=1) hemen dur
@@ -483,6 +552,7 @@ export class StreamResolver {
       // Araya daha yeni bir play girdiyse eski şarkıyı kurcalama (kuyruk çakışması)
       if (this.currentVideoId !== videoId) return;
       if (this.userWantsPaused) break;
+      this.setVolume(this.volume).catch(() => {});
       try {
         const alreadyPlaying = await win.webContents.executeJavaScript(
           `(() => {
@@ -576,9 +646,11 @@ export class StreamResolver {
   }
   async setVolume(vol: number): Promise<void> {
     this.volume = Math.max(0, Math.min(1, vol));
+    try {
+      this.win?.webContents.setAudioMuted(this.volume === 0);
+    } catch {}
     let effective = this.volume;
     try {
-      const { volumeRatioProvider } = await import('../providers/volume-ratio');
       if (volumeRatioProvider.isEnabled() && effective > 0) {
         effective = Math.min(1, Math.pow(effective, 0.85));
       }
@@ -680,7 +752,7 @@ export class StreamResolver {
     })()`;
     try {
       const r: any = await win.webContents.executeJavaScript(code, true);
-      if (!r?.ok) console.error('[Player] execCmd', cmd, 'başarısız:', r?.why || 'unknown');
+      if (!r?.ok) logger.error('[Player] execCmd', cmd, 'başarısız:', r?.why || 'unknown');
       return !!(r && r.ok);
     } catch {
       return false;

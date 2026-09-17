@@ -1,4 +1,6 @@
 import * as crypto from 'crypto';
+import { CHROME_UA, YT_CLIENT_VERSION, lrclibUA } from './client-versions';
+import { logger } from '../utils/logger';
 
 const BASE_URL = 'https://music.youtube.com/youtubei/v1';
 
@@ -13,7 +15,7 @@ const WEB_REMIX: YTClient = {
   hl: 'tr',
   gl: 'TR',
   clientName: 'WEB_REMIX',
-  clientVersion: '1.20241001.00.00'
+  clientVersion: YT_CLIENT_VERSION
 };
 
 export interface Song {
@@ -121,7 +123,7 @@ export class YouTubeAPI {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': CHROME_UA,
       'Origin': 'https://music.youtube.com',
       'Referer': 'https://music.youtube.com/'
     };
@@ -132,7 +134,7 @@ export class YouTubeAPI {
         const provStr = await this.cookieProvider();
         if (provStr) cookieStr = provStr;
       } catch (err) {
-        console.warn('[YT] Cookie provider failed:', err);
+        logger.warn('[YT] Cookie provider failed:', err);
       }
     }
 
@@ -163,7 +165,7 @@ export class YouTubeAPI {
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      console.error(`[YT] ${endpoint} ${res.status}:`, errBody.substring(0, 500));
+      logger.error(`[YT] ${endpoint} ${res.status}:`, errBody.substring(0, 500));
       throw new Error(`YouTube API ${endpoint}: ${res.status} - ${errBody.substring(0, 200)}`);
     }
     return res.json() as Promise<T>;
@@ -400,7 +402,7 @@ export class YouTubeAPI {
 
     if (!res.ok) {
       const errBody = await res.text().catch(() => '');
-      console.error(`[YT Player] ${endpoint} ${res.status}:`, errBody.substring(0, 500));
+      logger.error(`[YT Player] ${endpoint} ${res.status}:`, errBody.substring(0, 500));
       throw new Error(`YouTube Player API ${endpoint}: ${res.status} - ${errBody.substring(0, 200)}`);
     }
     return res.json() as Promise<T>;
@@ -416,15 +418,15 @@ export class YouTubeAPI {
         contentCheckOk: true, 
         racyCheckOk: true 
       }, 'https://www.youtube.com/youtubei/v1');
-      console.log('[YT Player] Using www.youtube.com, status:', d?.playabilityStatus?.status);
+      logger.debug('[YT Player] Using www.youtube.com, status:', d?.playabilityStatus?.status);
     } catch (err) {
-      console.error('[YT Player] www.youtube.com failed, trying music.youtube.com:', err);
+      logger.error('[YT Player] www.youtube.com failed, trying music.youtube.com:', err);
       try {
         // Fallback: music.youtube.com player API
         d = await this.request('player', { videoId, contentCheckOk: true, racyCheckOk: true });
-        console.log('[YT Player] Using music.youtube.com, status:', d?.playabilityStatus?.status);
+        logger.debug('[YT Player] Using music.youtube.com, status:', d?.playabilityStatus?.status);
       } catch (err2) {
-        console.error('[YT Player] All player attempts failed:', err2);
+        logger.error('[YT Player] All player attempts failed:', err2);
         return null;
       }
     }
@@ -447,7 +449,7 @@ export class YouTubeAPI {
     const audio = formats.filter(f => f.isAudio && f.url).sort((a, b) => b.bitrate - a.bitrate);
 
     if (!audio.length) {
-      console.error('[YT Player] No audio formats found. Playability:', d?.playabilityStatus?.status, d?.playabilityStatus?.reason);
+      logger.error('[YT Player] No audio formats found. Playability:', d?.playabilityStatus?.status, d?.playabilityStatus?.reason);
       // Try to get available formats even if not audio-only
       const anyAudio = formats.filter(f => f.url).sort((a, b) => b.bitrate - a.bitrate);
       if (anyAudio.length) {
@@ -504,7 +506,7 @@ export class YouTubeAPI {
       }
     }
 
-    console.log('[YT Home] items:', items.length);
+    logger.debug('[YT Home] items:', items.length);
     return { items };
   }
 
@@ -544,19 +546,30 @@ export class YouTubeAPI {
       if (typeof mf === 'string' && mf) title = mf;
     }
 
-    console.log('[YT Browse]', browseId, 'items:', items.length, 'title:', title);
+    logger.debug('[YT Browse]', browseId, 'items:', items.length, 'title:', title);
     return { title, items };
   }
 
   async getNext(videoId: string, playlistId?: string): Promise<{ items: Song[]; currentIndex: number }> {
+    const pId = playlistId || (videoId ? `RDAMVM${videoId}` : undefined);
     const body: Record<string, unknown> = { videoId };
-    if (playlistId) body.playlistId = playlistId;
+    if (pId) body.playlistId = pId;
     const data = await this.request('next', body);
 
     const items: Song[] = [];
+    const seen = new Set<string>();
     let currentIndex = 0;
-    const contents = (data as any)?.contents?.singleColumnMusicWatchNextResultsRenderer?.results?.results?.contents;
+    const push = (s: Song | null) => {
+      if (!s || !s.id || seen.has(s.id)) return;
+      seen.add(s.id);
+      items.push(s);
+      if (s.id === videoId) currentIndex = items.length - 1;
+    };
 
+    const root = (data as any)?.contents?.singleColumnMusicWatchNextResultsRenderer;
+
+    // Yol A (eski): results.results.contents[].musicWatchNextResultsRenderer...
+    const contents = root?.results?.results?.contents;
     if (Array.isArray(contents)) {
       for (const content of contents) {
         const secondary = content.musicWatchNextResultsRenderer?.results?.results?.contents;
@@ -566,7 +579,7 @@ export class YouTubeAPI {
           if (!primary) continue;
           const id = primary.videoId || primary.playlistId;
           if (!id) continue;
-          items.push({
+          push({
             id,
             title: primary.title?.runs?.[0]?.text || '',
             artist: primary.shortBylineText?.runs?.[0]?.text || '',
@@ -574,12 +587,45 @@ export class YouTubeAPI {
             thumbnail: primary.thumbnail?.thumbnails?.slice(-1)[0]?.url || '',
             duration: this.duration(primary.lengthText?.simpleText)
           });
-          if (primary.videoId === videoId) currentIndex = items.length - 1;
         }
       }
     }
 
+    // Yol B (güncel kuyruk): tabbedRenderer.watchNextTabbedResultsRenderer...playlistPanelRenderer
+    if (!items.length) {
+      const tabs = root?.tabbedRenderer?.watchNextTabbedResultsRenderer?.tabs;
+      if (Array.isArray(tabs)) {
+        for (const tab of tabs) {
+          const panel = tab?.tabRenderer?.content?.musicQueueRenderer?.content?.playlistPanelRenderer;
+          const panelContents = panel?.contents;
+          if (!Array.isArray(panelContents)) continue;
+          for (const item of panelContents) {
+            const pv = item.playlistPanelVideoRenderer
+              || item.playlistPanelVideoWrapperRenderer?.primaryRenderer?.playlistPanelVideoRenderer;
+            push(this.normalizePanelVideo(pv));
+          }
+        }
+      }
+    }
+
+    if (!items.length) {
+      logger.warn('[YT] getNext: ayrıştırılabilir kuyruk bulunamadı (videoId:', videoId + ')');
+    }
     return { items, currentIndex };
+  }
+
+  private normalizePanelVideo(r: any): Song | null {
+    const id = r?.videoId;
+    if (!id) return null;
+    const durStr = r.lengthText?.runs?.[0]?.text || r.lengthText?.simpleText || '';
+    return {
+      id,
+      title: this.text(r.title),
+      artist: this.text(r.shortBylineText) || this.text(r.longBylineText),
+      artistId: r.shortBylineText?.runs?.[0]?.navigationEndpoint?.browseEndpoint?.browseId || '',
+      thumbnail: r.thumbnail?.thumbnails?.slice(-1)?.[0]?.url || (id ? `https://i.ytimg.com/vi/${id}/hqdefault.jpg` : ''),
+      duration: this.duration(durStr)
+    };
   }
 
   async getSearchSuggestions(input: string): Promise<string[]> {
@@ -639,12 +685,7 @@ export class YouTubeAPI {
               const text = col?.musicResponsiveListItemFlexColumnRenderer?.text;
               const label = text?.runs?.map((run: any) => run.text).join('') || '';
               if (/söz|lyrics|歌词/i.test(label)) {
-                const nav = item?.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint;
-                if (nav) {
-                  lyricsBrowseId = 'UCB0oZn5mVBFj9Uwy91YB4FA'; // dummy
-                  lyricsParams = '';
-                }
-                // Alternatif: direct browse endpoint
+                // Yalnızca gerçek browse endpoint kabul edilir — kukla ID ile istek atılmaz.
                 const browseNav = item?.navigationEndpoint?.browseEndpoint;
                 if (browseNav?.browseId) {
                   lyricsBrowseId = browseNav.browseId;
@@ -686,12 +727,19 @@ export class YouTubeAPI {
         
         if (songTitle) {
           const lrcUrl = `https://lrclib.net/api/get?track_name=${encodeURIComponent(songTitle)}&artist_name=${encodeURIComponent(songArtist)}`;
-          const lrcRes = await fetch(lrcUrl, {
-            headers: { 'User-Agent': 'Harmonic/1.0.0 (https://github.com/harmonic)' }
-          });
-          if (lrcRes.ok) {
-            const lrcData: any = await lrcRes.json();
-            if (lrcData.plainLyrics) return lrcData.plainLyrics;
+          const ctl = new AbortController();
+          const timer = setTimeout(() => ctl.abort(), 8000);
+          try {
+            const lrcRes = await fetch(lrcUrl, {
+              headers: { 'User-Agent': lrclibUA() },
+              signal: ctl.signal
+            });
+            if (lrcRes.ok) {
+              const lrcData: any = await lrcRes.json();
+              if (lrcData.plainLyrics) return lrcData.plainLyrics;
+            }
+          } finally {
+            clearTimeout(timer);
           }
         }
       } catch {}
@@ -730,8 +778,27 @@ export class YouTubeAPI {
     return playlists;
   }
 
+  // YouTube Music "Beğenilenler" — girişli kullanıcıya özel otomatik liste.
+  // NOT: buraya sabit playlist ID'si yazma — her kullanıcıda farklı olur,
+  // başkasının listesini gösterir (bk. ANALIZ-RAPORU M-01). Adaylar sırayla
+  // denenir, ilk dolu sonuç döner; hepsi boşsa [] + warn (sessiz yanlış veri yok).
+  private static readonly LIKED_BROWSE_CANDIDATES = ['FEmusic_liked_videos'];
+
   async getLikedSongs(): Promise<Song[]> {
-    const data = await this.request('browse', { browseId: 'VLPLAKBLuBWqGYwwzJL5VdKOlpkUeMn0jKZ' });
+    for (const browseId of YouTubeAPI.LIKED_BROWSE_CANDIDATES) {
+      try {
+        const data = await this.request('browse', { browseId });
+        const songs = this.parseLikedShelf(data);
+        if (songs.length) return songs;
+        logger.warn(`[YT] liked: ${browseId} boş döndü`);
+      } catch (err) {
+        logger.warn(`[YT] liked: ${browseId} başarısız:`, (err as Error)?.message || err);
+      }
+    }
+    return [];
+  }
+
+  private parseLikedShelf(data: unknown): Song[] {
     const songs: Song[] = [];
     const contents = (data as any)?.contents?.singleColumnBrowseResultsRenderer?.tabs?.[0]?.tabRenderer?.content?.sectionListRenderer?.contents;
 

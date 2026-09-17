@@ -4,6 +4,7 @@ import * as http from 'http';
 import { URL } from 'url';
 import Store from 'electron-store';
 import { DISCORD_APP_ID } from '../utils/discord';
+import { logger } from '../utils/logger';
 
 export interface DiscordUser {
   id: string;
@@ -156,11 +157,11 @@ export class DiscordOAuth {
             provider: 'discord'
           };
           this.store.set('discordUser', user);
-          console.log('[Discord OAuth] Başarılı:', user.name);
+          logger.debug('[Discord OAuth] Başarılı:', user.name);
           cleanup();
           resolve({ success: true, user });
         } catch (err: any) {
-          console.error('[Discord OAuth] Hata:', err?.message || err);
+          logger.error('[Discord OAuth] Hata:', err?.message || err);
           cleanup();
           resolve({ success: false, error: err?.message || 'Giriş başarısız' });
         }
@@ -181,9 +182,10 @@ export class DiscordOAuth {
           finishError(error || 'Authorization code alınamadı');
           return;
         }
-        // Başarı sayfasını hemen göster, token işlemini arka planda yap
+        // Başarı sayfasını hemen göster, token işlemini arka planda yap.
+        // NOT: kullanıcı adı henüz bilinmiyor — isim iddia edilmez (bk. P3-08).
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(SUCCESS_HTML('Discord'));
+        res.end(SUCCESS_HTML('Discord hesabın'));
         await exchangeAndFetchUser(code);
       });
 

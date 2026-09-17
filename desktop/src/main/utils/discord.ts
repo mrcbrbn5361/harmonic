@@ -1,8 +1,10 @@
 import { Client } from 'discord-rpc';
 import Store from 'electron-store';
+import { logger } from './logger';
 
 interface StoreType {
   discordAppId: string;
+  customDiscordAppId?: string;
 }
 
 // Discord Application ID — uygulamaya entegre
@@ -18,7 +20,16 @@ export class DiscordRPC {
   private currentAppId = '';
 
   async connect(): Promise<void> {
-    await this.connectWithId(DISCORD_APP_ID);
+    const savedId = (store.get('customDiscordAppId') || store.get('discordAppId') || '').trim();
+    await this.connectWithId(savedId || DISCORD_APP_ID);
+  }
+
+  async setAppId(appId: string): Promise<boolean> {
+    const targetId = (appId || '').trim() || DISCORD_APP_ID;
+    store.set('discordAppId', targetId);
+    store.set('customDiscordAppId', (appId || '').trim());
+    await this.connectWithId(targetId);
+    return this.isConnected;
   }
 
   async connectWithId(appId: string): Promise<void> {
@@ -35,7 +46,7 @@ export class DiscordRPC {
       const connectPromise = new Promise<void>((resolve) => {
         this.client!.on('ready', () => {
           this.isConnected = true;
-          console.log('[Discord] Rich Presence bağlandı');
+          logger.debug(`[Discord] Rich Presence bağlandı (${appId})`);
           resolve();
         });
       });
@@ -49,14 +60,14 @@ export class DiscordRPC {
 
       await Promise.race([Promise.all([connectPromise, loginPromise]), timeoutPromise]);
     } catch (err) {
-      console.log('[Discord] Rich Presence bağlanamadı (Discord açık olabilir)');
+      logger.debug('[Discord] Rich Presence bağlanamadı (Discord açık olabilir)');
       this.isConnected = false;
       this.client = null;
     }
   }
 
   getAppId(): string {
-    return DISCORD_APP_ID;
+    return this.currentAppId || DISCORD_APP_ID;
   }
 
   isReady(): boolean {
@@ -85,12 +96,12 @@ export class DiscordRPC {
       let largeText: string | undefined;
       if (cover && cover.startsWith('http')) {
         largeImage = cover;
-        largeText = data.largeImageText || data.details || 'Harmonic Music';
+        largeText = (data.largeImageText || data.details || 'Harmonic Music').slice(0, 128);
       } else if (typeof data.largeImageKey === 'string' && data.largeImageKey && data.largeImageKey !== '?') {
         largeImage = data.largeImageKey;
-        largeText = data.largeImageText || 'Harmonic Music';
+        largeText = (data.largeImageText || 'Harmonic Music').slice(0, 128);
       } else if (typeof data.coverUrl === 'string' && data.coverUrl) {
-        largeText = data.largeImageText || data.details || 'Harmonic Music';
+        largeText = (data.largeImageText || data.details || 'Harmonic Music').slice(0, 128);
       }
 
       const assets: Record<string, string> = {};
@@ -98,15 +109,18 @@ export class DiscordRPC {
       if (largeText) assets.large_text = largeText;
       if (typeof data.smallImageKey === 'string' && data.smallImageKey && !data.smallImageKey.startsWith('http')) {
         assets.small_image = data.smallImageKey;
-        assets.small_text = data.smallImageText || '';
+        assets.small_text = (data.smallImageText || '').slice(0, 128);
       }
+
+      const safeDetails = (data.details || '').slice(0, 128);
+      const safeState = data.state ? data.state.slice(0, 128) : undefined;
 
       const activity: Record<string, unknown> = {
         // 2 = Listening → "Oynuyor" yerine "Dinliyor".
         // NOT: npm discord-rpc'nin setActivity'si type'ı çöpe attığı için ham gönderilir.
         type: data.type ?? 2,
-        details: data.details,
-        state: data.state || undefined,
+        details: safeDetails,
+        state: safeState,
         instance: false
       };
       if (typeof data.startTimestamp === 'number' || typeof data.endTimestamp === 'number') {
@@ -117,17 +131,20 @@ export class DiscordRPC {
       }
       if (Object.keys(assets).length > 0) activity.assets = assets;
       if (data.buttons && data.buttons.length > 0) {
-        activity.buttons = data.buttons.map((b) => ({ label: b.label, url: b.url }));
+        activity.buttons = data.buttons
+          .filter(b => b && b.label && b.url && (b.url.startsWith('http://') || b.url.startsWith('https://')))
+          .slice(0, 2)
+          .map((b) => ({ label: b.label.slice(0, 32), url: b.url }));
       }
 
       try {
         await (this.client as any).request('SET_ACTIVITY', { pid: process.pid, activity });
       } catch (rawErr: any) {
         // Discord type'ı reddederse klasik yola düş (Oynuyor görünür ama çalışmaya devam eder)
-        console.error('[Discord] Ham activity reddedildi, klasik yola dönülüyor:', rawErr?.message || rawErr);
+        logger.error('[Discord] Ham activity reddedildi, klasik yola dönülüyor:', rawErr?.message || rawErr);
         await this.client.setActivity({
-          details: data.details,
-          state: data.state,
+          details: safeDetails,
+          state: safeState,
           largeImageKey: largeImage,
           largeImageText: largeText,
           smallImageKey: data.smallImageKey,
@@ -135,11 +152,11 @@ export class DiscordRPC {
           startTimestamp: data.startTimestamp,
           endTimestamp: data.endTimestamp,
           instance: false,
-          buttons: data.buttons
+          buttons: activity.buttons as any
         } as any);
       }
     } catch (err) {
-      console.error('[Discord] Activity ayarlanamadı:', err);
+      logger.error('[Discord] Activity ayarlanamadı:', err);
     }
   }
 
@@ -149,7 +166,7 @@ export class DiscordRPC {
     try {
       this.client.clearActivity();
     } catch (err) {
-      console.error('[Discord] Activity temizlenemedi:', err);
+      logger.error('[Discord] Activity temizlenemedi:', err);
     }
   }
 

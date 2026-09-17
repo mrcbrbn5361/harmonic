@@ -2,8 +2,8 @@ import { BrowserWindow, session, Session, shell } from 'electron';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import Store from 'electron-store';
-// @ts-ignore — paketin tip tanımı yok
 import CDP from 'chrome-remote-interface';
+import { logger } from '../utils/logger';
 
 // ── YouTube Music cookie tabanlı giriş ──────────
 // Kullanıcı music.youtube.com'a normal Google hesabıyla giriş yapar.
@@ -14,9 +14,9 @@ import CDP from 'chrome-remote-interface';
 export const MUSIC_PARTITION = 'persist:harmonic';
 const CHROME_DEBUG_PORTS = [9222, 9333]; // Önce varsayılan 9222 (hedef: doğrudan ID ile bul)
 
-// Google, UA'sında "Electron" geçen pencerelerden girişi reddediyor
-// ("Bir sorun oluştu" hatası). Gerçek Chrome kimliği kullanıyoruz.
-export const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+// Tarayıcı kimliği tek kaynaktan (bk. M-12) — music-auth üzerinden içe aktaranlar etkilenmez.
+import { CHROME_UA, YT_CLIENT_VERSION } from '../api/client-versions';
+export { CHROME_UA };
 
 // Geçersiz hesap isimlerini filtrele
 const INVALID_NAMES = /^(guide|hamburger|menu|account|hesap|profil|open guide|rehber|kläravuz|youtube music)$/i;
@@ -133,7 +133,7 @@ export class MusicAuth {
     try {
       const user = this.store.get('musicUser') as any;
       if (user && (!user.name || user.name.trim().length <= 1 || user.name === 'Y' || user.name === 'YouTube Music' || !sanitizeName(user.name))) {
-        console.log('[Auth] Kirli store düzeltildi:', JSON.stringify(user), '-> silindi');
+        logger.debug('[Auth] Kirli store düzeltildi:', JSON.stringify(user), '-> silindi');
         this.store.set('musicUser', null as any);
       }
     } catch {}
@@ -157,12 +157,12 @@ export class MusicAuth {
           provider: 'youtube-music'
         };
         this.store.set('musicUser', merged);
-        console.log('[Auth] Profil googleUser\'dan güncellendi:', merged.name, merged.email);
+        logger.debug('[Auth] Profil googleUser\'dan güncellendi:', merged.name, merged.email);
         return;
       }
       const authed = await this.isAuthenticated();
       if (!authed) return;
-      console.log('[Auth] Profil yenileniyor (pp eksik)...');
+      logger.debug('[Auth] Profil yenileniyor (pp eksik)...');
       const prof = await this.fetchProfileViaAPI().catch(() => null);
       if (prof && (prof.name || prof.email || prof.picture)) {
         const merged: MusicUser = {
@@ -174,7 +174,7 @@ export class MusicAuth {
         };
         if (merged.name || merged.email || merged.picture) {
           this.store.set('musicUser', merged);
-          console.log('[Auth] Profil yenilendi:', merged.name || '(isim yok)', merged.picture ? 'pp var' : 'pp yok');
+          logger.debug('[Auth] Profil yenilendi:', merged.name || '(isim yok)', merged.picture ? 'pp var' : 'pp yok');
         }
       }
     } catch {}
@@ -442,7 +442,7 @@ export class MusicAuth {
           provider: 'youtube-music'
         };
         this.store.set('musicUser', user);
-        console.log('[Auth] profil:', user.name, user.email ? `(${user.email})` : '(e-posta yok)');
+        logger.debug('[Auth] profil:', user.name, user.email ? `(${user.email})` : '(e-posta yok)');
         return { success: true, cookies: written };
       }
       return { success: false, cookies: 0, error: 'Cookie aktarımı başarısız oldu.' };
@@ -509,10 +509,10 @@ export class MusicAuth {
           win.destroy();
           const validName = parsed && parsed.name && parsed.name.length>1 && parsed.name!=='Y' && parsed.name!=='YouTube Music' ? parsed.name : '';
           if (validName || (parsed && parsed.picture)) {
-            console.log('[Auth] Hidden window profil OK:', validName || '(sadece pp)', parsed.picture ? 'pp var' : 'pp yok');
+            logger.debug('[Auth] Hidden window profil OK:', validName || '(sadece pp)', parsed.picture ? 'pp var' : 'pp yok');
             return { name: validName, email: (parsed.email||'').startsWith('@')?'':parsed.email, picture: parsed.picture||'' };
           }
-          console.error('[Auth] Hidden window profil bulunamadı');
+          logger.error('[Auth] Hidden window profil bulunamadı');
         } catch { try{ win.destroy(); } catch{} }
       }
     } catch {}
@@ -534,7 +534,7 @@ export class MusicAuth {
           const picture = (mPic?.[1]||'').trim();
           const email = (mEmail?.[1]||mHandle?.[1]||'').trim();
           if (name && name.length>1 && name!=='Y') {
-            console.log('[Auth] HTML fetch profil OK:', name);
+            logger.debug('[Auth] HTML fetch profil OK:', name);
             return { name, email: email.startsWith('@')?'':email, picture };
           }
         }
@@ -543,7 +543,7 @@ export class MusicAuth {
     try {
       const cookies = await this.getSession().cookies.get({ url: 'https://music.youtube.com' });
       if (!cookies.length) {
-        console.error('[Auth] API profil: cookie yok');
+        logger.error('[Auth] API profil: cookie yok');
         return null;
       }
       const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
@@ -554,19 +554,19 @@ export class MusicAuth {
           'Cookie': cookieHeader,
           'Origin': 'https://music.youtube.com',
           'Referer': 'https://music.youtube.com/',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36'
+          'User-Agent': CHROME_UA
         },
         body: JSON.stringify({
-          context: { client: { hl: 'tr', gl: 'TR', clientName: 'WEB_REMIX', clientVersion: '1.20241001.00.00' } }
+          context: { client: { hl: 'tr', gl: 'TR', clientName: 'WEB_REMIX', clientVersion: YT_CLIENT_VERSION } }
         })
       });
       if (!res.ok) {
         const errText = await res.text();
-        console.error('[Auth] API profil HTTP:', res.status, '-', errText.substring(0, 200));
+        logger.error('[Auth] API profil HTTP:', res.status, '-', errText.substring(0, 200));
         return null;
       }
       const data: any = await res.json();
-      console.log('[Auth] API profil ham veri anahtarları:', Object.keys(data).slice(0, 15));
+      logger.debug('[Auth] API profil ham veri anahtarları:', Object.keys(data).slice(0, 15));
       const item = this.findAccountItem(data);
       if (item) {
         const name = this.runsText(item.accountName);
@@ -575,7 +575,7 @@ export class MusicAuth {
           || this.runsText(item.accountEmail)
           || this.extractEmail(JSON.stringify(data));
         if (name || email) {
-          console.log('[Auth] API profil OK:', name || email);
+          logger.debug('[Auth] API profil OK:', name || email);
           return { name, email, picture };
         }
       }
@@ -587,13 +587,13 @@ export class MusicAuth {
       const emailMatch = raw.match(/"accountEmail":\s*\{\s*"simpleText":\s*"((?:[^"\\]|\\.)*)"/);
       const email = emailMatch ? emailMatch[1] : '';
       if ((name && name !== 'Guide' && name.length > 1) || email) {
-        console.log('[Auth] API profil OK (regex):', name || email);
+        logger.debug('[Auth] API profil OK (regex):', name || email);
         return { name: (name === 'Guide') ? '' : name, email, picture: '' };
       }
-      console.error('[Auth] API profil: accountItem bulunamadı');
+      logger.error('[Auth] API profil: accountItem bulunamadı');
       return null;
     } catch (e: any) {
-      console.error('[Auth] API profil hatası:', e?.message || e);
+      logger.error('[Auth] API profil hatası:', e?.message || e);
       return null;
     }
   }
@@ -675,11 +675,11 @@ export class MusicAuth {
         returnByValue: true
       });
       const data = JSON.parse(res.result?.value || '{}');
-      console.log('[Auth] CDP profil:', data);
+      logger.debug('[Auth] CDP profil:', data);
       if (data.name || data.picture) return data;
       return null;
     } catch (e: any) {
-      console.error('[Auth] CDP profil hatası:', e?.message || e);
+      logger.error('[Auth] CDP profil hatası:', e?.message || e);
       return null;
     }
   }

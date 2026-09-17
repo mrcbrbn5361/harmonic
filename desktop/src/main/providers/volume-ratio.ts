@@ -4,10 +4,7 @@ const s = new Store<{volumeRatioEnabled:boolean}>({ name:'harmonic-settings', de
 export class VolumeRatioProvider {
   isEnabled(){ return !!s.get('volumeRatioEnabled'); }
   setEnabled(v:boolean){ s.set('volumeRatioEnabled', v); }
-  // YTM webview'de gain node ile normalize — stream-resolver üzerinden komut
-  apply(win: Electron.BrowserWindow, enabled:boolean){
-    const script = enabled ? `try{window.__harmonicGain=1.2}catch{}` : `try{window.__harmonicGain=1}catch{}`;
-    win.webContents.executeJavaScript(script).catch(()=>{});
-  }
+  // NOT: ses eğrisi stream-resolver.setVolume içindeki pow(effective, 0.85) ile uygulanır.
+  // Eski apply() (window.__harmonicGain yazan ölü gain-node denemesi) P3-01 ile silindi.
 }
 export const volumeRatioProvider = new VolumeRatioProvider();

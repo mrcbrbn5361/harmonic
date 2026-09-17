@@ -1,4 +1,4 @@
-# Harmonic v1.0.0
+# Harmonic v1.0.1
 
 **⚠️ WORK IN PROGRESS - β Sürüm**
 
@@ -7,7 +7,7 @@
 <sub>Proje henüz tamamlama aşamasında. Beklenmedik davranışlar, eksik özellikler veya hatalar olabilir. Katkılar ve özelleştirmeler memmunedir.</sub>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/harmonic-app/harmonic/blob/main/LICENSE)
-[![Version: 1.0.0](https://img.shields.io/badge/Version-1.0.0-blue.svg)](https://github.com/harmonic-app/harmonic/)
+[![Version: 1.0.1](https://img.shields.io/badge/Version-1.0.1-blue.svg)](https://github.com/harmonic-app/harmonic/)
 
 ## Overview
 
@@ -111,7 +111,7 @@ npm run build:portable
 4. **IPC Handlers** - Add handlers in `desktop/src/main/main.ts`
 5. **Store Data** - Manage state in `desktop/src/main/utils/store.ts`
 
-## Known Improvements (v1.0.0)
+## Known Improvements (v1.0.1)
 
 This release includes significant stability and professional improvements:
 

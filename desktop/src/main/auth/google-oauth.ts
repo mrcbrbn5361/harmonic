@@ -3,6 +3,7 @@ import * as http from 'http';
 import { URL } from 'url';
 import Store from 'electron-store';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from './google-credentials';
+import { logger } from '../utils/logger';
 
 interface OAuthTokens {
   access_token: string;
@@ -110,7 +111,7 @@ export class GoogleOAuth {
         const code = url.searchParams.get('code');
         const error = url.searchParams.get('error');
 
-        console.log('[Google OAuth] Callback received, code:', code ? 'var' : 'yok', 'error:', error);
+        logger.debug('[Google OAuth] Callback received, code:', code ? 'var' : 'yok', 'error:', error);
 
         if (error || !code) {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -130,7 +131,7 @@ export class GoogleOAuth {
 
         // Token exchange
         try {
-          console.log('[Google OAuth] Token exchange başlatılıyor...');
+          logger.debug('[Google OAuth] Token exchange başlatılıyor...');
           const tokenRes = await fetch(GOOGLE_TOKEN_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -144,7 +145,7 @@ export class GoogleOAuth {
           });
 
           const tokenData = await tokenRes.json() as any;
-          console.log('[Google OAuth] Token response:', tokenRes.status, tokenData.error || 'ok');
+          logger.debug('[Google OAuth] Token response:', tokenRes.status, tokenData.error || 'ok');
 
           if (!tokenRes.ok || tokenData.error) {
             throw new Error(tokenData.error_description || tokenData.error || 'Token exchange başarısız');
@@ -164,7 +165,7 @@ export class GoogleOAuth {
             headers: { Authorization: `Bearer ${tokens.access_token}` }
           });
           const userData = await userRes.json() as any;
-          console.log('[Google OAuth] User:', userData.name, userData.email);
+          logger.debug('[Google OAuth] User:', userData.name, userData.email);
 
           const user: UserData = {
             id: userData.id,
@@ -190,7 +191,7 @@ export class GoogleOAuth {
           cleanup();
           resolve({ success: true, user });
         } catch (err: any) {
-          console.error('[Google OAuth] Hata:', err.message);
+          logger.error('[Google OAuth] Hata:', err.message);
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(`
             <html><body style="font-family:sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
@@ -211,8 +212,8 @@ export class GoogleOAuth {
         const port = addr.port;
         const redirectUri = `http://127.0.0.1:${port}/callback`;
 
-        console.log('[Google OAuth] Server port:', port);
-        console.log('[Google OAuth] Redirect URI:', redirectUri);
+        logger.debug('[Google OAuth] Server port:', port);
+        logger.debug('[Google OAuth] Redirect URI:', redirectUri);
 
         const authUrl = `${GOOGLE_AUTH_URL}?${new URLSearchParams({
           client_id: clientId,
@@ -238,7 +239,7 @@ export class GoogleOAuth {
 
         // Navigate event ile yakala
         authWindow.webContents.on('did-navigate', (_, navUrl) => {
-          console.log('[Google OAuth] Navigate:', navUrl.substring(0, 80));
+          logger.debug('[Google OAuth] Navigate:', navUrl.substring(0, 80));
           if (navUrl.startsWith('http://127.0.0.1:')) {
             const navUrlObj = new URL(navUrl);
             const navCode = navUrlObj.searchParams.get('code');
@@ -267,7 +268,7 @@ export class GoogleOAuth {
             })
             .then(r => r.json())
             .then(async (tokenData: any) => {
-              console.log('[Google OAuth] Token:', tokenData.error || 'ok');
+              logger.debug('[Google OAuth] Token:', tokenData.error || 'ok');
               if (tokenData.error) throw new Error(tokenData.error);
 
               const tokens: OAuthTokens = {
@@ -284,12 +285,12 @@ export class GoogleOAuth {
               const ud = await userRes.json() as any;
               const user: UserData = { id: ud.id, name: ud.name, email: ud.email, picture: ud.picture || '', provider: 'google' };
               this.store.set('googleUser', user);
-              console.log('[Google OAuth] Başarılı:', user.name);
+              logger.debug('[Google OAuth] Başarılı:', user.name);
               cleanup();
               resolve({ success: true, user });
             })
             .catch((err) => {
-              console.error('[Google OAuth] Token hatası:', err.message);
+              logger.error('[Google OAuth] Token hatası:', err.message);
               cleanup();
               resolve({ success: false, error: err.message });
             });
@@ -297,7 +298,7 @@ export class GoogleOAuth {
         });
 
         authWindow.webContents.on('will-redirect', (_, navUrl) => {
-          console.log('[Google OAuth] will-redirect:', navUrl.substring(0, 80));
+          logger.debug('[Google OAuth] will-redirect:', navUrl.substring(0, 80));
         });
 
         authWindow.on('closed', () => {
@@ -321,9 +322,12 @@ export class GoogleOAuth {
   private async refreshGoogleToken(tokens: OAuthTokens): Promise<void> {
     if (!tokens.refresh_token) return;
     try {
-      const config = this.store.get('googleTokens');
-      const clientId = this.store.get('googleClientId') || '';
-      const clientSecret = this.store.get('googleClientSecret') || '';
+      // Store + env yedeği tek kaynaktan (bk. ANALIZ-RAPORU M-03).
+      const { clientId, clientSecret } = this.getGoogleConfig();
+      if (!clientId || !clientSecret) {
+        logger.warn('[Google OAuth] Refresh atlandı: Client ID/Secret yok');
+        return;
+      }
       const res = await fetch(GOOGLE_TOKEN_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -339,8 +343,12 @@ export class GoogleOAuth {
         tokens.access_token = data.access_token;
         tokens.expires_at = Date.now() + (data.expires_in * 1000);
         this.store.set('googleTokens', tokens);
+      } else {
+        logger.warn('[Google OAuth] Refresh HTTP:', res.status);
       }
-    } catch {}
+    } catch (err: any) {
+      logger.warn('[Google OAuth] Refresh hatası:', err?.message || err);
+    }
   }
 
   // ── Logout ───────────────────────────────────

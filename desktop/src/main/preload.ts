@@ -22,7 +22,7 @@ const api = {
     browse: (browseId: string, params?: string) => ipcRenderer.invoke('yt:browse', browseId, params),
     next: (videoId: string, playlistId?: string) => ipcRenderer.invoke('yt:next', videoId, playlistId),
     suggestions: (input: string) => ipcRenderer.invoke('yt:suggestions', input),
-    lyrics: (videoId: string) => ipcRenderer.invoke('yt:lyrics', videoId),
+    lyrics: (videoId: string, title?: string, artist?: string, duration?: number) => ipcRenderer.invoke('yt:lyrics', videoId, title, artist, duration),
     libraryPlaylists: () => ipcRenderer.invoke('yt:libraryPlaylists'),
     likedSongs: () => ipcRenderer.invoke('yt:likedSongs'),
     libraryArtists: () => ipcRenderer.invoke('yt:libraryArtists'),
@@ -55,6 +55,7 @@ const api = {
 
   discord: {
     getAppId: () => ipcRenderer.invoke('discord:getAppId'),
+    setAppId: (appId: string) => ipcRenderer.invoke('discord:setAppId', appId),
     isReady: () => ipcRenderer.invoke('discord:isReady'),
     setActivity: (data: {
       details: string;
@@ -98,6 +99,11 @@ const api = {
       const h = (_: unknown, u: any) => cb(u);
       ipcRenderer.on('player:update', h);
       return () => ipcRenderer.removeListener('player:update', h);
+    },
+    onError: (cb: (msg: string) => void) => {
+      const h = (_: unknown, msg: string) => cb(msg);
+      ipcRenderer.on('player:error', h);
+      return () => ipcRenderer.removeListener('player:error', h);
     }
   },
 
@@ -106,6 +112,17 @@ const api = {
     updateState: (data: any) => ipcRenderer.invoke('botServer:updateState', data),
     toggle: (enable: boolean) => ipcRenderer.invoke('botServer:toggle', enable),
     getStatus: () => ipcRenderer.invoke('botServer:getStatus'),
+    getAuth: () => ipcRenderer.invoke('botServer:getAuth'),
+    setAuthEnabled: (enable: boolean) => ipcRenderer.invoke('botServer:setAuthEnabled', enable),
+    regenerateToken: () => ipcRenderer.invoke('botServer:regenerateToken'),
+  },
+
+  app: {
+    getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  },
+
+  auto: {
+    checkForUpdates: () => ipcRenderer.invoke('auto:checkForUpdates'),
   }
 };
 

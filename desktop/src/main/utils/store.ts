@@ -1,4 +1,5 @@
 import Store from 'electron-store';
+import { logger } from './logger';
 
 interface StoreData {
   theme: 'dark' | 'light' | 'system';
@@ -7,6 +8,7 @@ interface StoreData {
   autoPlay: boolean;
   recentlyPlayed: Array<{ id: string; title: string; artist: string; thumbnail: string; timestamp: number }>;
   likedSongs: string[];
+  likedSongsDetails?: Record<string, { id: string; title: string; artist: string; thumbnail: string }>;
   queue: Array<{ id: string; title: string; artist: string; thumbnail: string }>;
   queueIndex: number;
   playlists: Array<{ id: string; name: string; songs: string[]; createdAt: number }>;
@@ -16,6 +18,11 @@ interface StoreData {
   shuffle: boolean;
   repeat: 'off' | 'all' | 'one';
   discordEnabled?: boolean;
+  discordButtons?: boolean;
+  discordThumbnails?: boolean;
+  discordAppId?: string;
+  customDiscordAppId?: string;
+  botServerEnabled?: boolean;
 }
 
 const defaults: StoreData = {
@@ -51,7 +58,7 @@ export class StoreManager {
     try {
       this.store.set(key, value);
     } catch (e) {
-      console.error('[Store] Set error:', key, e);
+      logger.error('[Store] Set error:', key, e);
     }
   }
 

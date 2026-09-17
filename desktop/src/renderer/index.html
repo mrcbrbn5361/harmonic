@@ -310,6 +310,23 @@
               </div>
               <div class="setting-row">
                 <div class="setting-label">
+                  <span class="setting-name">Token Koruması</span>
+                  <span class="setting-desc">Açıkken botlar state için Bearer token göndermeli</span>
+                </div>
+                <label class="toggle"><input type="checkbox" id="botServerAuth"><span class="toggle-slider"></span></label>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Bot Token</span>
+                  <span class="setting-desc">Botlarınızla paylaşın; herkese açık yerlerde yayınlamayın</span>
+                </div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input type="text" id="botServerToken" readonly placeholder="—" style="width:170px;background:var(--c-bg-3);border:1px solid var(--c-border);border-radius:6px;padding:5px 8px;font-size:11px;color:var(--c-text-1)">
+                  <button class="btn btn-ghost" id="btnRegenToken" style="font-size:11px;padding:5px 10px">Yenile</button>
+                </div>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
                   <span class="setting-name">Özel Discord Application ID (İsteğe Bağlı)</span>
                   <span class="setting-desc">Kendi Discord Bot Application ID'ni bağlayabilirsin</span>
                 </div>
@@ -361,8 +378,8 @@
                     </div>
                   </div>
                   <div class="discord-embed-buttons">
-                    <button class="discord-action-btn">Harmonic'te Aç ↗</button>
-                    <button class="discord-action-btn">Şarkı Sözleri</button>
+                    <button class="discord-action-btn" id="previewBtnOpenApp">Harmonic'te Aç ↗</button>
+                    <button class="discord-action-btn" id="previewBtnLyrics">Şarkı Sözleri</button>
                   </div>
                   <div class="discord-embed-buttons" style="margin-top:6px">
                     <button class="discord-action-btn" id="previewBtnRec1">1. Söyle Sunam ↗</button>
@@ -413,7 +430,14 @@
                 <div class="setting-label">
                   <span class="setting-name">Sürüm</span>
                 </div>
-                <span class="setting-value">v1.0.1</span>
+                <span class="setting-value" id="appVersion">v1.0.1</span>
+              </div>
+              <div class="setting-row">
+                <div class="setting-label">
+                  <span class="setting-name">Güncellemeler</span>
+                  <span class="setting-desc" id="updateStatus">Henüz denetlenmedi</span>
+                </div>
+                <button class="btn btn-ghost" id="btnCheckUpdates" style="font-size:11px;padding:5px 10px">Denetle</button>
               </div>
               <div class="setting-row">
                 <div class="setting-label">
@@ -536,6 +560,41 @@
         <div class="modal-footer">
           <button class="btn btn-ghost" id="cancelPlaylist">İptal</button>
           <button class="btn btn-primary" id="createPlaylist">Oluştur</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generic Confirm Modal (native confirm() yerine — bk. P3-07) -->
+    <div class="modal-overlay" id="confirmModal">
+      <div class="modal" style="max-width: 400px">
+        <div class="modal-header">
+          <h3 id="confirmTitle">Emin misiniz?</h3>
+        </div>
+        <div class="modal-body">
+          <p id="confirmMessage" style="margin:0;color:var(--c-text-1);font-size:13px;line-height:1.5"></p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="confirmCancel">Vazgeç</button>
+          <button class="btn btn-primary" id="confirmOk" style="background:var(--c-error)">Sil</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Add To Playlist Modal -->
+    <div class="modal-overlay" id="addToPlaylistModal">
+      <div class="modal" style="max-width: 440px">
+        <div class="modal-header">
+          <h3 id="addToPlaylistModalTitle">Çalma Listesine Ekle</h3>
+          <button class="icon-btn" id="closeAddToPlaylistModal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div id="addToPlaylistList" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;"></div>
+        </div>
+        <div class="modal-footer" style="justify-content: space-between">
+          <button class="btn btn-ghost" id="cancelAddToPlaylist">Kapat</button>
+          <button class="btn btn-primary" id="btnCreateAndAddPlaylist" style="font-size: 12px">+ Yeni Liste</button>
         </div>
       </div>
     </div>

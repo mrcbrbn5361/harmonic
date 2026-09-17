@@ -970,18 +970,31 @@ input, select { font: inherit; color: inherit; }
 
 /* Lyrics */
 .lyric-line {
-  padding: 8px 0;
+  padding: 8px 12px;
   font-size: 16px;
   line-height: 1.8;
   color: var(--c-text-2);
   text-align: center;
-  transition: color var(--t-normal);
+  transition: all 0.25s cubic-bezier(0.2, 0, 0, 1);
+  border-radius: 8px;
+  cursor: default;
+}
+
+.lyric-line.synced {
+  cursor: pointer;
+}
+
+.lyric-line.synced:hover {
+  color: var(--c-text-1);
+  background: var(--c-bg-2);
 }
 
 .lyric-line.active {
-  color: var(--c-text-0);
-  font-weight: 600;
-  font-size: 18px;
+  color: var(--c-accent);
+  font-weight: 700;
+  font-size: 20px;
+  transform: scale(1.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 /* ============================================
@@ -1303,31 +1316,6 @@ input, select { font: inherit; color: inherit; }
 
 .queue-item.playing .song-title { color: var(--c-accent); }
 
-/* Ad Skip Button */
-.ad-skip-btn {
-  position: fixed;
-  bottom: 100px;
-  right: 24px;
-  z-index: 1000;
-  background: var(--c-bg-2, #1a1a2e);
-  border: 1px solid var(--c-border, #333);
-  color: var(--c-text-1, #fff);
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  display: none;
-  align-items: center;
-  gap: 8px;
-  transition: all 0.2s;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-.ad-skip-btn:hover {
-  background: var(--c-accent, #e8364e);
-  border-color: var(--c-accent, #e8364e);
-  transform: translateY(-1px);
-}
 
 /* ============================================
    Context Menu

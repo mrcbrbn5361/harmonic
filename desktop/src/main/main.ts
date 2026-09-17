@@ -12,6 +12,7 @@ import { volumeRatioProvider } from './providers/volume-ratio';
 import { lyricsProvider } from './providers/lyrics-provider';
 import { autoUpdater } from 'electron-updater';
 import { BotServer } from './api/bot-server';
+import { logger } from './utils/logger';
 
 // Gizli çözücü penceresinde otomatik oynatmaya izin ver (kullanıcı hareketi gerekmesin)
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -35,9 +36,17 @@ let resolverListenerSet = false;
 const isDev = !app.isPackaged;
 
 function createWindow(): void {
+  // Kayıtlı pencere boyutu/konumu varsa geri yükle (bk. ANALIZ-RAPORU M-04).
+  const savedBounds = storeManager.get('windowBounds');
+  const initWidth = savedBounds && savedBounds.width >= 960 ? savedBounds.width : 1280;
+  const initHeight = savedBounds && savedBounds.height >= 640 ? savedBounds.height : 820;
+  const initPos: { x?: number; y?: number } = savedBounds && Number.isFinite(savedBounds.x) && Number.isFinite(savedBounds.y)
+    ? { x: savedBounds.x, y: savedBounds.y }
+    : {};
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    width: initWidth,
+    height: initHeight,
+    ...initPos,
     minWidth: 960,
     minHeight: 640,
     frame: false,
@@ -53,7 +62,8 @@ function createWindow(): void {
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
         webSecurity: true,
-        sandbox: false
+        // Preload yalnızca contextBridge IPC köprüsü sunduğu için sandbox güvenli (bk. M-09).
+        sandbox: true
       }
   });
 
@@ -87,17 +97,41 @@ function createWindow(): void {
     mainWindow?.webContents.send('win:maximized', false);
   });
 
+  // Pencere boyutunu/konumunu hatırla (debounce'lu + kapanışta kesin yaz).
+  const persistBounds = () => {
+    try {
+      const b = mainWindow?.getBounds();
+      if (b) storeManager.saveWindowBounds(b);
+    } catch {}
+  };
+  let boundsTimer: ReturnType<typeof setTimeout> | null = null;
+  const schedulePersistBounds = () => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(persistBounds, 500);
+  };
+  mainWindow.on('resize', schedulePersistBounds);
+  mainWindow.on('move', schedulePersistBounds);
+  mainWindow.on('close', persistBounds);
+
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    // Allowlist denetimi IPC ile aynı tek kaynaktan (bk. ANALIZ-RAPORU M-07).
+    if (isAllowedExternalUrl(url)) {
+      shell.openExternal(url);
+    }
     return { action: 'deny' };
   });
 
   buildMenu();
 
-  // Production'da F12 ve Ctrl+Shift+I dev tools'u engelle
+  // Production'da F12, DevTools, F5 ve Ctrl+R sayfa yenilemelerini engelle (müzik kesilmesin)
   if (!isDev) {
     mainWindow.webContents.on('before-input-event', (event, input) => {
-      if (input.key === 'F12' || (input.control && input.shift && input.key === 'I')) {
+      if (
+        input.key === 'F12' ||
+        (input.control && input.shift && (input.key === 'I' || input.key === 'i')) ||
+        input.key === 'F5' ||
+        (input.control && (input.key === 'r' || input.key === 'R'))
+      ) {
         event.preventDefault();
       }
     });
@@ -141,8 +175,8 @@ function buildMenu(): void {
             dialog.showMessageBox(mainWindow!, {
               type: 'info',
               title: 'Harmonic',
-              message: 'Harmonic v1.0.0',
-              detail: 'Premium müzik deneyimi.\n\n© 2026 Harmonic Team. Tüm hakları saklıdır.',
+              message: `Harmonic v${app.getVersion()}`,
+              detail: 'Windows 11 için modern, reklamsız ve Discord bot entegrasyonlu müzik istemcisi.\n\n© 2026 Harmonic Team. Tüm hakları saklıdır.',
               buttons: ['Tamam']
             });
           }
@@ -153,6 +187,19 @@ function buildMenu(): void {
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+}
+
+// Dış bağlantı allowlist'i — TEK KAYNAK (IPC + windowOpenHandler ikisi de burayı kullanır).
+function isAllowedExternalUrl(raw: string): boolean {
+  try {
+    const u = new URL(String(raw));
+    if (u.protocol !== 'https:') return false;
+    const host = u.hostname.toLowerCase();
+    const allowed = ['music.youtube.com', 'youtube.com', 'www.youtube.com', 'github.com', 'ytimg.com'];
+    return allowed.some((h) => host === h || host.endsWith('.' + h));
+  } catch {
+    return false;
+  }
 }
 
 function setupIPC(): void {
@@ -169,18 +216,18 @@ function setupIPC(): void {
 
   // ── Renderer log köprüsü (arayüzden gelen debug mesajları) ──
   ipcMain.on('debug:log', (_, msg: string) => {
-    console.log('[UI]', msg);
+    logger.debug('[UI]', msg);
   });
 
   // YouTube API
   ipcMain.handle('yt:search', async (_, query: string) => {
     try {
       const result = await youtubeAPI.search(query);
-      console.log('[Main] Search:', query, 'songs:', result.songs?.length || 0, 'videos:', result.videos?.length || 0);
-      console.log('[Main] Search first song:', JSON.stringify(result.songs?.[0]));
+      logger.debug('[Main] Search:', query, 'songs:', result.songs?.length || 0, 'videos:', result.videos?.length || 0);
+      logger.debug('[Main] Search first song:', JSON.stringify(result.songs?.[0]));
       return result;
     } catch (err) {
-      console.error('[Main] Search error:', err);
+      logger.error('[Main] Search error:', err);
       return { songs: [], videos: [], albums: [], artists: [], playlists: [] };
     }
   });
@@ -189,7 +236,7 @@ function setupIPC(): void {
     if (!(await musicAuth.isAuthenticated())) {
       return { error: 'not_authenticated', id: videoId };
     }
-    // Event listener'ı kur (ilk IPC çağrısı için)
+    // Event listener'ları kur (ilk IPC çağrısı için)
     if (!resolverListenerSet) {
       resolverListenerSet = true;
       streamResolver.onUpdate((u) => {
@@ -197,10 +244,25 @@ function setupIPC(): void {
           mainWindow.webContents.send('player:update', u);
         }
       });
+      streamResolver.onError((msg) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('player:error', msg);
+        }
+      });
     }
-    // Oynatmayı başlat (fire & forget — ana pencere state'i update event'iyle alır)
-    streamResolver.play(videoId).catch((err) => console.error('[Player] play error:', err));
-    return { id: videoId, playing: true };
+    // Çözücü yok edildiyse sahte "playing:true" dönme (bk. ANALIZ-RAPORU M-02).
+    if (!streamResolver.isUsable()) {
+      return { id: videoId, playing: false, error: 'player_unavailable' };
+    }
+    try {
+      // Oynatmayı başlat (fire & forget — ana pencere state'i update event'iyle alır;
+      // gerçek yükleme hataları 'player:error' kanalından iletilir)
+      streamResolver.play(videoId).catch((err) => logger.error('[Player] play error:', err));
+      return { id: videoId, playing: true };
+    } catch (err: any) {
+      logger.error('[Player] play sync error:', err?.message || err);
+      return { id: videoId, playing: false, error: 'play_failed' };
+    }
   });
 
   ipcMain.handle('player:pause', async () => {
@@ -234,13 +296,13 @@ function setupIPC(): void {
   ipcMain.handle('yt:home', async () => {
     try {
       const result = await youtubeAPI.getHome();
-      console.log('[Main] Home items:', result.items?.length || 0);
+      logger.debug('[Main] Home items:', result.items?.length || 0);
       if (result.items?.length) {
-        console.log('[Main] Home first item:', JSON.stringify(result.items[0]));
+        logger.debug('[Main] Home first item:', JSON.stringify(result.items[0]));
       }
       return result;
     } catch (err) {
-      console.error('[Main] Home error:', err);
+      logger.error('[Main] Home error:', err);
       return { items: [] };
     }
   });
@@ -249,7 +311,7 @@ function setupIPC(): void {
       const result = await youtubeAPI.browse(browseId, params);
       return result; 
     } catch (err) { 
-      console.error('[Main] Browse error:', browseId, err);
+      logger.error('[Main] Browse error:', browseId, err);
       return { title: '', items: [] }; 
     }
   });
@@ -259,8 +321,8 @@ function setupIPC(): void {
   ipcMain.handle('yt:suggestions', async (_, input: string) => {
     try { return await youtubeAPI.getSearchSuggestions(input); } catch { return []; }
   });
-  ipcMain.handle('yt:lyrics', async (_, videoId: string) => {
-    try { return await youtubeAPI.getLyrics(videoId); } catch { return null; }
+  ipcMain.handle('yt:lyrics', async (_, videoId: string, title?: string, artist?: string, duration?: number) => {
+    try { return await lyricsProvider.fetch(videoId, youtubeAPI, title, artist, duration); } catch { return null; }
   });
   ipcMain.handle('yt:libraryPlaylists', async () => {
     try { return await youtubeAPI.getLibraryPlaylists(); } catch { return []; }
@@ -279,15 +341,9 @@ function setupIPC(): void {
   ipcMain.handle('store:get', (_, key: string) => storeManager.get(key as any));
   ipcMain.handle('store:set', (_, key: string, value: unknown) => { storeManager.set(key as any, value); });
   ipcMain.handle('shell:openExternal', (_, url: string) => {
-    try {
-      const u = new URL(String(url));
-      if (u.protocol !== 'https:') return;
-      if (['music.youtube.com','youtube.com','www.youtube.com','github.com'].some(h => u.hostname === h || u.hostname.endsWith('.'+h)) || u.hostname === 'music.youtube.com') {
-        shell.openExternal(u.toString());
-      } else if (u.hostname.endsWith('youtube.com') || u.hostname.endsWith('ytimg.com')) {
-        shell.openExternal(u.toString());
-      }
-    } catch {}
+    if (isAllowedExternalUrl(url)) {
+      shell.openExternal(new URL(String(url)).toString());
+    }
   });
 
   // ── Auth IPC ─────────────────────────────────
@@ -323,10 +379,6 @@ function setupIPC(): void {
   ipcMain.handle('auth:openChromeLogin', async () => {
     return await musicAuth.openChromeLogin();
   });
-  ipcMain.handle('auth:getLoginUrl', () => musicAuth.getLoginUrl());
-  ipcMain.handle('auth:importFromExternalChrome', async (_e, targetId?: string) => {
-    return await musicAuth.importFromExternalChrome(targetId);
-  });
   ipcMain.handle('auth:importFromChrome', async () => {
     let result = await musicAuth.importFromChrome();
     if (!result.success) {
@@ -359,21 +411,21 @@ function setupIPC(): void {
     await musicAuth.logout();
     return { success: true };
   });
-  ipcMain.handle('auth:logoutMusicCompletely', async () => {
-    await musicAuth.logoutCompletely();
-    return { success: true };
-  });
   ipcMain.handle('auth:isMusicAuthenticated', () => musicAuth.isAuthenticated());
   ipcMain.handle('auth:getMusicUser', () => musicAuth.getUser());
 
   // ── Discord Rich Presence IPC (yalnızca resmi RPC/IPC yolu — token yok) ──
   ipcMain.handle('discord:getAppId', () => discordRPC.getAppId());
+  ipcMain.handle('discord:setAppId', async (_, appId: string) => {
+    storeManager.set('customDiscordAppId', (appId || '').trim());
+    return await discordRPC.setAppId(appId);
+  });
   ipcMain.handle('discord:isReady', () => discordRPC.isReady());
   ipcMain.handle('discord:setActivity', async (_, data) => {
-    const enabled = storeManager.get('discordEnabled' as any);
+    const enabled = storeManager.get('discordEnabled');
     if (enabled === false) return;
-    const showButtons = storeManager.get('discordButtons' as any);
-    const showThumbs = storeManager.get('discordThumbnails' as any);
+    const showButtons = storeManager.get('discordButtons');
+    const showThumbs = storeManager.get('discordThumbnails');
     if (showButtons === false) delete (data as any).buttons;
     if (showThumbs === false) { delete (data as any).coverUrl; delete (data as any).largeImageText; }
     if (discordRPC.isReady()) {
@@ -396,7 +448,8 @@ function setupIPC(): void {
   ipcMain.handle('discord:getUser', () => discordOAuth.getDiscordUser());
 
   // ── Auth clients (ytmdesktop2 auth) ───────
-  ipcMain.handle('auth:clients', () => authProvider.listClients());
+  // NOT: renderer'a token'sız görünüm verilir (bk. ANALIZ-RAPORU S-01).
+  ipcMain.handle('auth:clients', () => authProvider.listPublicClients());
   ipcMain.handle('auth:createClient', (_, d:{appId:string;appName:string}) => authProvider.createManual(d));
   ipcMain.handle('auth:revokeClient', (_, appId:string) => authProvider.revoke(appId));
   // ── VolumeRatio ───────────────────────────
@@ -418,7 +471,7 @@ function setupIPC(): void {
     return true;
   });
   ipcMain.handle('botServer:toggle', async (_, enable: boolean) => {
-    storeManager.set('botServerEnabled' as any, enable);
+    storeManager.set('botServerEnabled', enable);
     if (enable) {
       return await botServer.start();
     } else {
@@ -430,15 +483,30 @@ function setupIPC(): void {
     running: botServer.isRunning(),
     port: botServer.getPort()
   }));
+  ipcMain.handle('botServer:getAuth', () => botServer.getAuth());
+  ipcMain.handle('botServer:setAuthEnabled', (_, enable: boolean) => botServer.setAuthEnabled(enable));
+  ipcMain.handle('botServer:regenerateToken', () => botServer.regenerateToken());
 
   // ── Auto-update ─────────────────────────────
-  ipcMain.handle('auto:checkForUpdates', () => {
-    return { status: 'already_checking' };
+  // NOT: stub yok — gerçek denetim yapılır, sonuç (hata dahil) renderer'a döner (bk. M-05).
+  ipcMain.handle('auto:checkForUpdates', async () => {
+    try {
+      const r = await autoUpdater.checkForUpdates();
+      const v = r?.updateInfo?.version;
+      return v && v !== app.getVersion()
+        ? { status: 'available', version: v }
+        : { status: 'up-to-date', version: app.getVersion() };
+    } catch (err: any) {
+      logger.warn('[Auto] check failed:', err?.message || err);
+      return { status: 'error', message: err?.message || String(err) };
+    }
   });
+
+  ipcMain.handle('app:getVersion', () => app.getVersion());
 
   ipcMain.handle('auto:getUpdateStatus', () => {
     return {
-      version: (autoUpdater as any).currentVersion || '1.0.1',
+      version: app.getVersion(),
       releaseNotes: null,
       releaseDate: null,
       forced: false
@@ -461,7 +529,7 @@ app.whenReady().then(async () => {
   discordRPC = new DiscordRPC();
   discordOAuth = new DiscordOAuth();
   botServer = new BotServer(9863);
-  const botServerEnabled = storeManager.get('botServerEnabled' as any);
+  const botServerEnabled = storeManager.get('botServerEnabled');
   if (botServerEnabled !== false) {
     await botServer.start();
   }
@@ -476,12 +544,12 @@ app.whenReady().then(async () => {
 
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on('error', (err: any) => { console.warn('[Auto] Update check skipped:', err?.message||err); });
+  autoUpdater.on('error', (err: any) => { logger.warn('[Auto] Update check skipped:', err?.message||err); });
   // GitHub'da release yokken hata popup'ı gösterme
   if (process.env.GH_TOKEN || require('fs').existsSync(require('path').join(__dirname,'../release'))) {
     autoUpdater.checkForUpdatesAndNotify().catch(()=>{});
   } else {
-    console.log('[Auto] Update check disabled - no releases');
+    logger.debug('[Auto] Update check disabled - no releases');
   }
 
   setupIPC();
