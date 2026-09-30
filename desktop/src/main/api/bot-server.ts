@@ -9,6 +9,17 @@ export function isAllowedOrigin(origin?: string | null): boolean {
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
 
+export function isAllowedHost(host?: string | null): boolean {
+  if (!host) return false;
+  return /^(localhost|127\.0\.0\.1)(:\d+)?$/i.test(host.trim());
+}
+
+export function maskToken(token?: string | null): string {
+  if (!token) return '—';
+  if (token.length <= 8) return '••••••••';
+  return `${token.slice(0, 4)}••••••••${token.slice(-4)}`;
+}
+
 export function verifyBearerToken(authHeader: string | undefined, expectedToken: string): boolean {
   if (!authHeader || !expectedToken) return false;
   const trimmed = authHeader.trim();
@@ -106,16 +117,21 @@ export class BotServer {
   }
 
   // ── İsteğe bağlı token koruması (bk. ANALIZ-RAPORU M-08) ──
-  public getAuth(): { enabled: boolean; token: string } {
+  public getAuth(): { enabled: boolean; token: string; masked: boolean } {
     let enabled = true;
     try {
       const val = authStore.get('botTokenEnabled');
       if (val !== undefined) enabled = !!val;
     } catch {}
-    return { enabled, token: ensureToken() };
+    const raw = ensureToken();
+    return { enabled, token: maskToken(raw), masked: true };
   }
 
-  public setAuthEnabled(enable: boolean): { enabled: boolean; token: string } {
+  public getRawToken(): string {
+    return ensureToken();
+  }
+
+  public setAuthEnabled(enable: boolean): { enabled: boolean; token: string; masked: boolean } {
     try { authStore.set('botTokenEnabled', !!enable); } catch {}
     return this.getAuth();
   }
@@ -151,20 +167,28 @@ export class BotServer {
 
     return new Promise((resolve) => {
       this.server = http.createServer((req, res) => {
+        // DNS Rebinding / Host header denetimi (M-08): Yalnızca loopback Host izinlidir
+        const host = req.headers.host;
+        if (!isAllowedHost(host)) {
+          res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ error: 'forbidden_host', message: 'Geçersiz Host başlığı. Yalnızca loopback erişimine izin verilir.' }));
+          return;
+        }
+
         // CORS Headers: Sadece localhost / loopback origin'lerine izin ver
         const origin = req.headers.origin;
-        if (origin && isAllowedOrigin(origin)) {
+        if (origin) {
+          if (!isAllowedOrigin(origin)) {
+            res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify({ error: 'forbidden_origin', message: 'Yabancı origin erişimi engellendi.' }));
+            return;
+          }
           res.setHeader('Access-Control-Allow-Origin', origin);
           res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
           res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         }
 
         if (req.method === 'OPTIONS') {
-          if (origin && !isAllowedOrigin(origin)) {
-            res.writeHead(403);
-            res.end();
-            return;
-          }
           res.writeHead(204);
           res.end();
           return;

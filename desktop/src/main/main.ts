@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, shell, Menu, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, shell, Menu, dialog, clipboard } from 'electron';
 import * as path from 'path';
 import { YouTubeAPI } from './api/innertube';
 import { StoreManager } from './utils/store';
@@ -569,8 +569,36 @@ function setupIPC(): void {
     port: botServer.getPort()
   }));
   ipcMain.handle('botServer:getAuth', () => botServer.getAuth());
-  ipcMain.handle('botServer:setAuthEnabled', (_, enable: boolean) => botServer.setAuthEnabled(enable));
+  ipcMain.handle('botServer:setAuthEnabled', async (_, enable: boolean, confirmed?: boolean) => {
+    if (typeof enable !== 'boolean') return botServer.getAuth();
+    if (!enable) {
+      // Güvenlik (M-08): Token korumasını kapatmak kullanıcı onayı (confirmation) gerektirir
+      let userConfirmed = !!confirmed;
+      if (!userConfirmed && mainWindow && !mainWindow.isDestroyed()) {
+        const res = await dialog.showMessageBox(mainWindow, {
+          type: 'warning',
+          buttons: ['Vazgeç', 'Korumayı Kapat'],
+          defaultId: 0,
+          cancelId: 0,
+          title: 'Güvenlik Onayı',
+          message: 'Discord Bot API token korumasını kapatmak istiyor musunuz?',
+          detail: 'Token koruması kapatıldığında yerel ağdaki veya bilgisayarınızdaki tüm uygulamalar kimlik doğrulaması olmadan bot verilerinize erişebilir.'
+        });
+        userConfirmed = res.response === 1;
+      }
+      if (!userConfirmed) {
+        logger.warn('[BotServer] Token korumasını kapatma işlemi onaylanmadı.');
+        return botServer.getAuth();
+      }
+    }
+    return botServer.setAuthEnabled(enable);
+  });
   ipcMain.handle('botServer:regenerateToken', () => botServer.regenerateToken());
+  ipcMain.handle('botServer:copyToken', () => {
+    const raw = botServer.getRawToken();
+    if (raw) clipboard.writeText(raw);
+    return true;
+  });
 
   // ── Auto-update ─────────────────────────────
   // NOT: stub yok — gerçek denetim yapılır, sonuç (hata dahil) renderer'a döner (bk. M-05).

@@ -2688,6 +2688,7 @@ function updatePlayIcon() {
     const botAuthToggle = $('#botServerAuth') as HTMLInputElement;
     const botTokenInput = $('#botServerToken') as HTMLInputElement;
     const btnRegen = $('#btnRegenToken');
+    const btnCopy = $('#btnCopyToken');
     if (botAuthToggle && (api as any).botServer?.getAuth) {
       (api as any).botServer.getAuth().then((a: any) => {
         if (!a) return;
@@ -2695,15 +2696,29 @@ function updatePlayIcon() {
         if (botTokenInput && a.token) botTokenInput.value = a.token;
       }).catch(() => {});
       botAuthToggle.addEventListener('change', async () => {
-        const a = await (api as any).botServer.setAuthEnabled(botAuthToggle.checked).catch(() => null);
-        if (a && botTokenInput) botTokenInput.value = a.token || '';
-        showToast(a?.enabled ? 'Token koruması açıldı.' : 'Token koruması kapatıldı (açık mod).', 'info');
+        const desired = botAuthToggle.checked;
+        const a = await (api as any).botServer.setAuthEnabled(desired).catch(() => null);
+        if (a) {
+          botAuthToggle.checked = !!a.enabled;
+          if (botTokenInput) botTokenInput.value = a.token || '';
+        }
+        showToast(a?.enabled ? 'Token koruması açıldı.' : 'Token koruması kapatıldı (açık mod).', a?.enabled ? 'info' : 'warning');
       });
       btnRegen?.addEventListener('click', async () => {
-        const t = await (api as any).botServer.regenerateToken().catch(() => null);
+        const res = await (api as any).botServer.regenerateToken().catch(() => null);
+        const t = typeof res === 'string' ? res : (res?.token || res?.maskedToken);
         if (t && botTokenInput) {
           botTokenInput.value = t;
-          showToast('Yeni token üretildi, botlarınızı güncelleyin.', 'success');
+          showToast('Yeni token üretildi (yalnızca bu işlem anında gösterilmektedir).', 'success');
+        }
+      });
+      btnCopy?.addEventListener('click', async () => {
+        if (typeof (api as any).botServer?.copyToken === 'function') {
+          await (api as any).botServer.copyToken();
+          showToast('Bot token panoya kopyalandı.', 'success');
+        } else if (botTokenInput?.value) {
+          await navigator.clipboard.writeText(botTokenInput.value);
+          showToast('Bot token panoya kopyalandı.', 'success');
         }
       });
     }
