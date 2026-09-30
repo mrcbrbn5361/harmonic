@@ -429,18 +429,24 @@ export class MusicAuth {
         } catch {}
       }
       if (written > 0) {
-        // Cookie'ler tam yazıldıktan hemen sonra profil API'si hata verebilir
-        // — 2sn bekle, sonra dene. Başarısız olursa CDP ile dene.
-        await new Promise((r) => setTimeout(r, 2000));
-        let prof = await this.fetchProfileViaAPI().catch(() => null);
+        // Cookie'ler yazıldıktan sonra adaptif yoklama ile profil API'sini sorgula
+        let prof: { name: string; email: string; picture: string } | null = null;
+        for (let i = 0; i < 8; i++) {
+          prof = await this.fetchProfileViaAPI().catch(() => null);
+          if (prof && (prof.name || prof.email)) break;
+          await new Promise((r) => setTimeout(r, 200));
+        }
         if (!prof || (!prof.name && !prof.email)) {
           // CDP ile dene (Chrome'da açık sayfayı kullan)
           prof = await this.fetchProfileViaCDP(client).catch(() => null);
         }
-        // Hâlâ bulamadıysa, 3sn daha bekle ve bir kez daha dene
+        // Hâlâ bulunamadıysa kısa aralıklarla (300ms x 3 = 900ms tavan) son bir kez dene
         if (!prof || (!prof.name && !prof.email)) {
-          await new Promise((r) => setTimeout(r, 3000));
-          prof = await this.fetchProfileViaAPI().catch(() => null);
+          for (let i = 0; i < 3; i++) {
+            await new Promise((r) => setTimeout(r, 300));
+            prof = await this.fetchProfileViaAPI().catch(() => null);
+            if (prof && (prof.name || prof.email)) break;
+          }
         }
         // Google hesabından gerçek ismi al (YouTube Music API çoğu zaman isim dönmüyor)
         const googleUser = this.store.get('googleUser' as any) as any;
@@ -666,8 +672,17 @@ export class MusicAuth {
       const { Page, Runtime } = client;
       await Page.enable();
       await Runtime.enable();
-      try { await Page.navigate({ url: 'https://music.youtube.com/' }); } catch {}
-      await new Promise((r) => setTimeout(r, 7000));
+      // Sabit 7sn kör bekleme yerine DOM profil veya navigasyon öğesini adaptif sorgula (300ms x 10 = max 3.0sn, erken çıkışlı)
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 300));
+        try {
+          const check = await Runtime.evaluate({
+            expression: `!!(document.querySelector('ytd-active-account-header-renderer') || document.querySelector('ytmusic-app-navigation-bar') || document.querySelector('#avatar'))`,
+            returnByValue: true
+          });
+          if (check?.result?.value) break;
+        } catch {}
+      }
       const res = await Runtime.evaluate({
         expression: `(function(){
           try {
