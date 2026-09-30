@@ -337,9 +337,67 @@ function setupIPC(): void {
     try { return await youtubeAPI.getLibraryAlbums(); } catch { return []; }
   });
 
-  // Store
-  ipcMain.handle('store:get', (_, key: string) => storeManager.get(key as any));
-  ipcMain.handle('store:set', (_, key: string, value: unknown) => { storeManager.set(key as any, value); });
+  // Store — Renderer allowlist koruması (İsmail Dede Bulgu-2 / Analyst Şartnamesi)
+  const ALLOWED_RENDERER_STORE_READ_KEYS = new Set([
+    'theme',
+    'volume',
+    'quality',
+    'autoPlay',
+    'recentlyPlayed',
+    'likedSongs',
+    'likedSongsDetails',
+    'queue',
+    'queueIndex',
+    'playlists',
+    'shuffle',
+    'repeat',
+    'discordEnabled',
+    'discordButtons',
+    'discordThumbnails',
+    'customDiscordAppId',
+    'botServerEnabled'
+  ]);
+
+  const ALLOWED_RENDERER_STORE_WRITE_KEYS = new Set([
+    'theme',
+    'volume',
+    'quality',
+    'autoPlay',
+    'recentlyPlayed',
+    'likedSongs',
+    'likedSongsDetails',
+    'queue',
+    'queueIndex',
+    'playlists',
+    'shuffle',
+    'repeat',
+    'discordEnabled',
+    'discordButtons',
+    'discordThumbnails',
+    'customDiscordAppId'
+  ]);
+
+  ipcMain.handle('store:get', (_, key: string) => {
+    if (!ALLOWED_RENDERER_STORE_READ_KEYS.has(key)) {
+      logger.warn(`[Security] Unauthorized store:get attempted for key: ${key}`);
+      return undefined;
+    }
+    return storeManager.get(key as any);
+  });
+
+  ipcMain.handle('store:set', (_, key: string, value: unknown) => {
+    if (!ALLOWED_RENDERER_STORE_WRITE_KEYS.has(key)) {
+      logger.warn(`[Security] Unauthorized store:set blocked for key: ${key}`);
+      return;
+    }
+    if (key === 'customDiscordAppId' && value) {
+      if (typeof value !== 'string' || (!/^\d{17,20}$/.test(value.trim()) && value.trim() !== '')) {
+        logger.warn(`[Security] Invalid customDiscordAppId value rejected: ${value}`);
+        return;
+      }
+    }
+    storeManager.set(key as any, value);
+  });
   ipcMain.handle('shell:openExternal', (_, url: string) => {
     if (isAllowedExternalUrl(url)) {
       shell.openExternal(new URL(String(url)).toString());
@@ -368,12 +426,20 @@ function setupIPC(): void {
 
   ipcMain.handle('auth:isGoogleAuthenticated', () => googleAuth.isGoogleAuthenticated());
   ipcMain.handle('auth:getGoogleUser', () => googleAuth.getGoogleUser());
-  ipcMain.handle('auth:getGoogleAccessToken', () => googleAuth.getGoogleAccessToken());
+  ipcMain.handle('auth:getGoogleAccessToken', () => {
+    return { hasToken: Boolean(googleAuth.getGoogleAccessToken()) };
+  });
 
   ipcMain.handle('auth:setGoogleConfig', (_, { clientId, clientSecret }: { clientId: string; clientSecret: string }) => {
     googleAuth.setGoogleConfig(clientId, clientSecret);
   });
-  ipcMain.handle('auth:getGoogleConfig', () => googleAuth.getGoogleConfig());
+  ipcMain.handle('auth:getGoogleConfig', () => {
+    const cfg = googleAuth.getGoogleConfig();
+    return {
+      configured: Boolean(cfg.clientId && cfg.clientSecret),
+      clientId: cfg.clientId || ''
+    };
+  });
 
   // ── YouTube Music cookie girişi IPC ──────────
   ipcMain.handle('auth:openChromeLogin', async () => {
@@ -417,8 +483,13 @@ function setupIPC(): void {
   // ── Discord Rich Presence IPC (yalnızca resmi RPC/IPC yolu — token yok) ──
   ipcMain.handle('discord:getAppId', () => discordRPC.getAppId());
   ipcMain.handle('discord:setAppId', async (_, appId: string) => {
-    storeManager.set('customDiscordAppId', (appId || '').trim());
-    return await discordRPC.setAppId(appId);
+    const trimmed = (appId || '').trim();
+    if (trimmed && !/^\d{17,20}$/.test(trimmed)) {
+      logger.warn(`[Security] Invalid Discord appId format: ${trimmed}`);
+      return false;
+    }
+    storeManager.set('customDiscordAppId', trimmed);
+    return await discordRPC.setAppId(trimmed);
   });
   ipcMain.handle('discord:isReady', () => discordRPC.isReady());
   ipcMain.handle('discord:setActivity', async (_, data) => {
@@ -428,6 +499,11 @@ function setupIPC(): void {
     const showThumbs = storeManager.get('discordThumbnails');
     if (showButtons === false) delete (data as any).buttons;
     if (showThumbs === false) { delete (data as any).coverUrl; delete (data as any).largeImageText; }
+    if (data && Array.isArray((data as any).buttons)) {
+      (data as any).buttons = (data as any).buttons.filter((b: any) =>
+        b && typeof b.label === 'string' && typeof b.url === 'string' && isAllowedExternalUrl(b.url)
+      );
+    }
     if (discordRPC.isReady()) {
       await discordRPC.setActivity(data);
     }
@@ -450,7 +526,16 @@ function setupIPC(): void {
   // ── Auth clients (ytmdesktop2 auth) ───────
   // NOT: renderer'a token'sız görünüm verilir (bk. ANALIZ-RAPORU S-01).
   ipcMain.handle('auth:clients', () => authProvider.listPublicClients());
-  ipcMain.handle('auth:createClient', (_, d:{appId:string;appName:string}) => authProvider.createManual(d));
+  ipcMain.handle('auth:createClient', (_, d:{appId:string;appName:string}) => {
+    if (!d || typeof d.appId !== 'string' || typeof d.appName !== 'string') return null;
+    const appId = d.appId.trim();
+    const appName = d.appName.trim();
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(appId) || appName.length < 1 || appName.length > 80) {
+      logger.warn(`[Security] Invalid auth client creation parameters`);
+      return null;
+    }
+    return authProvider.createManual({ appId, appName });
+  });
   ipcMain.handle('auth:revokeClient', (_, appId:string) => authProvider.revoke(appId));
   // ── VolumeRatio ───────────────────────────
   ipcMain.handle('volumeRatio:isEnabled', () => volumeRatioProvider.isEnabled());
