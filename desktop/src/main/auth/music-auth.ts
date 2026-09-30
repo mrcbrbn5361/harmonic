@@ -248,14 +248,27 @@ export class MusicAuth {
             const curUrl = this.loginWindow.webContents.getURL() || '';
             if (!curUrl.includes('music.youtube.com')) {
               await this.loginWindow.webContents.loadURL('https://music.youtube.com/');
-              for(let i=0;i<12;i++){ await new Promise(r=>setTimeout(r,1000)); try{ const has=await this.loginWindow!.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('#account-name'))`,true); if(has) break; }catch{} }
+              for (let i = 0; i < 10; i++) {
+                await new Promise(r => setTimeout(r, 500));
+                try {
+                  const has = await this.loginWindow!.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('#account-name'))`, true);
+                  if (has) break;
+                } catch {}
+              }
             }
           } catch {}
-          // hesap menüsü kapalıysa avatar'a tıklayıp aç
+          // hesap menüsü kapalıysa avatar'a tıklayıp aç (saf JS, TypeScript casting yok)
           try {
-            await this.loginWindow.webContents.executeJavaScript(`(function(){ if(!document.querySelector('ytd-active-account-header-renderer #account-name')){ const b=document.querySelector('ytmusic-nav-bar #avatar button')||document.querySelector('ytmusic-nav-bar #avatar')||document.querySelector('#avatar-btn'); if(b){ (b as HTMLElement).click(); } } })()`, true);
+            await this.loginWindow.webContents.executeJavaScript(`(function(){ if(!document.querySelector('ytd-active-account-header-renderer #account-name')){ const b=document.querySelector('ytmusic-nav-bar #avatar button')||document.querySelector('ytmusic-nav-bar #avatar')||document.querySelector('#avatar-btn'); if(b && typeof b.click === 'function'){ b.click(); } } })()`, true);
           } catch {}
-          await new Promise(r=>setTimeout(r,2500));
+          // Menü açılana kadar en fazla 3sn bekle (300ms aralıklarla)
+          for (let i = 0; i < 10; i++) {
+            try {
+              const has = await this.loginWindow.webContents.executeJavaScript(`!!document.querySelector('ytd-active-account-header-renderer #account-name')`, true);
+              if (has) break;
+            } catch {}
+            await new Promise(r => setTimeout(r, 300));
+          }
           const domData: any = await this.loginWindow.webContents.executeJavaScript(`(function(){
             const acc=document.querySelector('ytd-active-account-header-renderer');
             let name='', email='', picture='', handle='';
@@ -462,13 +475,26 @@ export class MusicAuth {
         const win = new BrowserWindow({ show:false, width:1024, height:700, webPreferences:{ partition: MUSIC_PARTITION } });
         try { (win.webContents as any).setUserAgent(CHROME_UA); } catch {}
         await win.loadURL('https://music.youtube.com/');
-        // sayfa + nav-bar avatar yüklenene kadar 15sn bekle
-        for(let i=0;i<15;i++){ await new Promise(r=>setTimeout(r,1000)); try{ const has=await win.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`,true); if(has) break; }catch{} }
-        // hesap menüsü kapalıyken header renderer DOM'da olmaz — avatar'a tıklayıp aç
+        // sayfa + nav-bar avatar yüklenene kadar en fazla 5sn bekle (500ms aralıklarla)
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          try {
+            const has = await win.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`, true);
+            if (has) break;
+          } catch {}
+        }
+        // hesap menüsü kapalıyken header renderer DOM'da olmaz — avatar'a tıklayıp aç (saf JS, TypeScript casting yok)
         try {
-          await win.webContents.executeJavaScript(`(function(){ const b=document.querySelector('ytmusic-nav-bar #avatar button')||document.querySelector('ytmusic-nav-bar #avatar')||document.querySelector('#avatar-btn'); if(b){ (b as HTMLElement).click(); } })()`, true);
+          await win.webContents.executeJavaScript(`(function(){ const b=document.querySelector('ytmusic-nav-bar #avatar button')||document.querySelector('ytmusic-nav-bar #avatar')||document.querySelector('#avatar-btn'); if(b && typeof b.click === 'function'){ b.click(); } })()`, true);
         } catch {}
-        for(let i=0;i<8;i++){ await new Promise(r=>setTimeout(r,1000)); try{ const has=await win.webContents.executeJavaScript(`!!(document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`,true); if(has) break; }catch{} }
+        // Menü açılana kadar en fazla 3sn bekle (300ms aralıklarla)
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 300));
+          try {
+            const has = await win.webContents.executeJavaScript(`!!(document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`, true);
+            if (has) break;
+          } catch {}
+        }
         try {
           const data: any = await win.webContents.executeJavaScript(`(function(){
             const acc=document.querySelector('ytd-active-account-header-renderer');
