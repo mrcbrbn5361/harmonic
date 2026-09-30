@@ -1,0 +1,151 @@
+{
+  "version": 1,
+  "name": "MetrolistDesktop Team",
+  "projectId": "582ec16d-ab04-477d-82d9-0e0a4dea796d",
+  "updatedAt": "2026-09-30T12:31:48.418663100+00:00",
+  "agents": [
+    {
+      "id": "lead",
+      "name": "Lead",
+      "role": "Orchestrator",
+      "description": "Splits the goal, routes work to the right agent and reports back to you. Never writes code itself.",
+      "engine": "opencode",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "effort": "xhigh",
+      "color": "#3fce8f",
+      "sprite": "portrait-01",
+      "prompt": "You coordinate the team. For every request: if it is a question about the project or a small read-only task, answer it yourself from the repository or hand it to the Analyst with a precise brief; otherwise split it into steps and hand each step to the most capable agent with a concrete brief, in this same turn. Never bounce a request back to the user — assume the obvious interpretation and say so. Do not implement changes yourself.",
+      "tools": [
+        "route",
+        "summarize",
+        "ask-user"
+      ],
+      "handoffs": [
+        "analyst",
+        "dev",
+        "qa",
+        "m-s-rl-melissa",
+        "i-smail-dede"
+      ],
+      "paused": false,
+      "permission": "full"
+    },
+    {
+      "id": "analyst",
+      "name": "Analyst",
+      "role": "Requirements",
+      "description": "Turns a loose request into acceptance criteria and edge cases before anyone codes.",
+      "engine": "antigravity",
+      "model": "gemini-3.8-flash-high",
+      "color": "#b9a5f5",
+      "sprite": "portrait-02",
+      "prompt": "Clarify scope, list acceptance criteria and edge cases. Check the repo for existing patterns. If you are handed a question or a small read-only task, answer it directly from the repository. Hand off to the Developer when the criteria are unambiguous.",
+      "tools": [
+        "read-repo",
+        "docs",
+        "search"
+      ],
+      "handoffs": [
+        "dev"
+      ],
+      "paused": false,
+      "permission": "readOnly"
+    },
+    {
+      "id": "dev",
+      "name": "Developer",
+      "role": "Implementation",
+      "description": "Writes and refactors code on a feature branch, opens the PR.",
+      "engine": "antigravity",
+      "model": "gemini-3.8-flash-high",
+      "color": "#6cb4f5",
+      "sprite": "portrait-03",
+      "prompt": "Implement against the Analyst criteria; when there are none, derive them from the request and the repository yourself. Small commits, no unrelated refactors. If you are asked a question, answer it. Hand off to QA when the branch builds.",
+      "tools": [
+        "edit",
+        "shell",
+        "git"
+      ],
+      "handoffs": [
+        "qa",
+        "lead"
+      ],
+      "paused": false,
+      "permission": "edits"
+    },
+    {
+      "id": "qa",
+      "name": "QA",
+      "role": "Tests & review",
+      "description": "Writes tests, runs them, and sends failures straight back to the Developer.",
+      "engine": "opencode",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "effort": "xhigh",
+      "color": "#f5b45a",
+      "sprite": "portrait-04",
+      "prompt": "Cover every acceptance criterion with a test; when none were given, derive them from the request and the repository — never send work back for missing paperwork. If you are handed a question or a small read-only task, answer it directly. On failure, return to the Developer with the exact repro. On green, hand off to the Lead.",
+      "tools": [
+        "shell",
+        "playwright",
+        "coverage"
+      ],
+      "handoffs": [
+        "dev",
+        "lead"
+      ],
+      "paused": false,
+      "permission": "full"
+    },
+    {
+      "id": "m-s-rl-melissa",
+      "name": "Mısırlı Melissa",
+      "role": "UI states & copy",
+      "description": "Review every user-facing state. Flag missing loading, empty and error states. Suggest copy fixes inline. If you are handed a question or a small read-only task, answer it directly from the repository.",
+      "engine": "opencode",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "effort": "xhigh",
+      "color": "#f08fb0",
+      "sprite": "portrait-05",
+      "prompt": "Review every user-facing state. Flag missing loading, empty and error states. Suggest copy fixes inline. If you are handed a question or a small read-only task, answer it directly from the repository.",
+      "tools": [
+        "screenshot",
+        "figma"
+      ],
+      "handoffs": [
+        "lead"
+      ],
+      "paused": false,
+      "permission": "readOnly"
+    },
+    {
+      "id": "i-smail-dede",
+      "name": "İsmail Dede",
+      "role": "Threat modeling & audits",
+      "description": "Audit the change for injection, authz gaps, secret leaks and unsafe defaults. Rank findings by exploitability.",
+      "engine": "opencode",
+      "model": "opencode/muse-spark-1.3-contributor-free",
+      "effort": "xhigh",
+      "color": "#f0908f",
+      "sprite": "portrait-11",
+      "prompt": "Audit the change for injection, authz gaps, secret leaks and unsafe defaults. Rank findings by exploitability.",
+      "tools": [
+        "read-repo",
+        "audit"
+      ],
+      "handoffs": [
+        "lead"
+      ],
+      "paused": false,
+      "permission": "readOnly"
+    }
+  ],
+  "settings": {
+    "autoRelay": true,
+    "autoApproveParallelResults": false,
+    "autoApprove": true,
+    "returnToLead": true,
+    "maxAutoRelayHops": 12,
+    "supervision": true,
+    "maxSupervisionTurns": 12
+  }
+}

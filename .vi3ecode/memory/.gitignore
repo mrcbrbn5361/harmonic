@@ -1,0 +1,17 @@
+# --- vi3ecode:memory (managed) ---
+# Derived from entries/ — rebuilt on open, never merge these.
+index.json
+index.json.lock
+retrieval-cache.json
+stats.json
+maintenance.json
+history-state.json
+gardener-plan.json
+# Machine-local: your useful/not-useful votes (US26).
+feedback.json
+*.lock
+.trash/
+# Kept: entries/, MEMORY.md (generated but read by external agents
+# through a pointer — regenerate on conflict, do not hand-merge),
+# archive-log.json.
+# --- /vi3ecode:memory ---
