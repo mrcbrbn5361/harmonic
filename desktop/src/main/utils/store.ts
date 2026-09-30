@@ -36,7 +36,8 @@ const defaults: StoreData = {
   queueIndex: -1,
   playlists: [],
   shuffle: false,
-  repeat: 'off'
+  repeat: 'off',
+  botServerEnabled: false
 };
 
 export class StoreManager {

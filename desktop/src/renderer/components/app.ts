@@ -2640,7 +2640,10 @@ function updatePlayIcon() {
     const botServerStatus = $('#botServerStatus');
     if (botServerToggle && (api as any).botServer) {
       api.store.get('botServerEnabled').then((v: any) => {
-        botServerToggle.checked = v !== false;
+        botServerToggle.checked = v === true;
+        if (botServerStatus) {
+          botServerStatus.textContent = v === true ? '✓ Aktif (Port 9863)' : 'Kapalı';
+        }
       });
       botServerToggle.addEventListener('change', async () => {
         const active = await (api as any).botServer.toggle(botServerToggle.checked);

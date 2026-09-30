@@ -530,7 +530,7 @@ app.whenReady().then(async () => {
   discordOAuth = new DiscordOAuth();
   botServer = new BotServer(9863);
   const botServerEnabled = storeManager.get('botServerEnabled');
-  if (botServerEnabled !== false) {
+  if (botServerEnabled === true) {
     await botServer.start();
   }
 

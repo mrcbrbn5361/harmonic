@@ -1,13 +1,31 @@
 import * as http from 'http';
-import { randomBytes } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import Store from 'electron-store';
 import { appVersion } from './client-versions';
 import { logger } from '../utils/logger';
 
-// Token kalıcılığı (harmonic-settings altında; varsayılan: kapalı/açık mod — geriye uyumlu).
+export function isAllowedOrigin(origin?: string | null): boolean {
+  if (!origin) return false;
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+export function verifyBearerToken(authHeader: string | undefined, expectedToken: string): boolean {
+  if (!authHeader || !expectedToken) return false;
+  const trimmed = authHeader.trim();
+  if (!trimmed.startsWith('Bearer ')) return false;
+  const token = trimmed.slice(7).trim();
+  const tokenBuf = Buffer.from(token, 'utf8');
+  const expectedBuf = Buffer.from(expectedToken, 'utf8');
+  if (tokenBuf.length !== expectedBuf.length) {
+    return false;
+  }
+  return timingSafeEqual(tokenBuf, expectedBuf);
+}
+
+// Token kalıcılığı (harmonic-settings altında; varsayılan: token koruması aktif — M-08).
 const authStore = new Store<{ botToken: string; botTokenEnabled: boolean }>({
   name: 'harmonic-settings',
-  defaults: { botToken: '', botTokenEnabled: false }
+  defaults: { botToken: '', botTokenEnabled: true }
 });
 
 function ensureToken(): string {
@@ -89,8 +107,11 @@ export class BotServer {
 
   // ── İsteğe bağlı token koruması (bk. ANALIZ-RAPORU M-08) ──
   public getAuth(): { enabled: boolean; token: string } {
-    let enabled = false;
-    try { enabled = !!authStore.get('botTokenEnabled'); } catch {}
+    let enabled = true;
+    try {
+      const val = authStore.get('botTokenEnabled');
+      if (val !== undefined) enabled = !!val;
+    } catch {}
     return { enabled, token: ensureToken() };
   }
 
@@ -106,11 +127,13 @@ export class BotServer {
   }
 
   private isAuthorized(req: http.IncomingMessage): boolean {
-    let enabled = false;
-    try { enabled = !!authStore.get('botTokenEnabled'); } catch {}
-    if (!enabled) return true; // açık mod (varsayılan, geriye uyumlu)
-    const hdr = String(req.headers.authorization || '');
-    return hdr === `Bearer ${ensureToken()}`;
+    let enabled = true;
+    try {
+      const val = authStore.get('botTokenEnabled');
+      if (val !== undefined) enabled = !!val;
+    } catch {}
+    if (!enabled) return true; // açık mod (kullanıcı bilinçli olarak kapattıysa)
+    return verifyBearerToken(req.headers.authorization, ensureToken());
   }
 
   public updateState(partial: Partial<BotServerState>): void {
@@ -128,12 +151,20 @@ export class BotServer {
 
     return new Promise((resolve) => {
       this.server = http.createServer((req, res) => {
-        // CORS Headers
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        // CORS Headers: Sadece localhost / loopback origin'lerine izin ver
+        const origin = req.headers.origin;
+        if (origin && isAllowedOrigin(origin)) {
+          res.setHeader('Access-Control-Allow-Origin', origin);
+          res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        }
 
         if (req.method === 'OPTIONS') {
+          if (origin && !isAllowedOrigin(origin)) {
+            res.writeHead(403);
+            res.end();
+            return;
+          }
           res.writeHead(204);
           res.end();
           return;
@@ -154,7 +185,7 @@ export class BotServer {
 
         if (url === '/api/v1/health' || url === '/health') {
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({ status: 'ok', app: 'Harmonic Music', version: appVersion(), port: this.port }));
+          res.end(JSON.stringify({ status: 'ok' }));
           return;
         }
 
