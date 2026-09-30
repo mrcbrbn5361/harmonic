@@ -3,64 +3,15 @@
    Main Renderer Script
    ============================================ */
 
-(() => {
-  'use strict';
-
-  // ── Types ──────────────────────────────────
-  interface Song {
-    id: string;
-    title: string;
-    artist: string;
-    artistId: string;
-    thumbnail: string;
-    duration: number;
-    album?: string;
-    durationText?: string;
-  }
-
-  interface QueueItem extends Song {}
-
-  interface QueueContext {
-    name: string;
-    type: 'playlist' | 'album' | 'search' | 'home' | 'auto' | 'radio';
-    songs: QueueItem[];
-  }
-
-  // ── State ──────────────────────────────────
-  const state = {
-    page: 'home',
-    currentSong: null as QueueItem | null,
-    queue: [] as QueueItem[],
-    queueIndex: -1,
-    userQueue: [] as QueueItem[],
-    contextQueue: [] as QueueItem[],
-    contextName: '',
-    contextType: 'home' as 'playlist' | 'album' | 'search' | 'home' | 'auto' | 'radio',
-    history: [] as QueueItem[],
-    playing: false,
-    shuffle: false,
-    shuffleOrder: [] as number[],
-    repeat: 'off' as 'off' | 'all' | 'one',
-    volume: 80,
-    lastVolume: 80,
-    currentTime: 0,
-    duration: 0,
-    paused: false,
-    lastPausedAt: 0,
-    liked: new Set<string>(),
-    likedSongsMap: {} as Record<string, Song>,
-    recentlyPlayed: [] as Song[],
-    panelOpen: null as 'lyrics' | 'queue' | null,
-    lastSearchResults: [] as Song[],
-    libraryTab: 'recent' as 'recent' | 'songs' | 'albums' | 'playlists',
-    searchFilter: 'all' as 'all' | 'songs' | 'videos' | 'albums' | 'artists',
-    navGeneration: 0,
-    isLoggedIn: false,
-    user: null as { id: string; name: string; email: string; picture: string } | null
-  };
-
-  // ── Global Song Registry (Tüm sayfalardaki şarkıların kalıcı nesne önbelleği) ──
-  const songRegistry = new Map<string, Song>();
+import {
+  type Song,
+  type QueueItem,
+  type QueueContext,
+  type UserProfile,
+  state,
+  songRegistry,
+  rebuildMergedQueue
+} from './state';
 
   // ── API Bridge ─────────────────────────────
   const api = (window as any).api;
@@ -168,10 +119,6 @@
       [a[i], a[j]] = [a[j], a[i]];
     }
     return a;
-  }
-
-  function rebuildMergedQueue(): QueueItem[] {
-    return [...state.userQueue, ...state.contextQueue];
   }
 
   function addToQueue(song: Song): void {
@@ -2820,4 +2767,3 @@ function updatePlayIcon() {
   }
 
   document.addEventListener('DOMContentLoaded', init);
-})();
