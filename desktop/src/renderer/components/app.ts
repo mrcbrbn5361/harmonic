@@ -2706,11 +2706,11 @@ function updatePlayIcon() {
       });
       btnRegen?.addEventListener('click', async () => {
         const res = await (api as any).botServer.regenerateToken().catch(() => null);
-        const t = typeof res === 'string' ? res : (res?.token || res?.maskedToken);
+        const t = res?.token || (typeof res === 'string' ? res : '');
         if (t && botTokenInput) {
           botTokenInput.value = t;
-          showToast('Yeni token üretildi (yalnızca bu işlem anında gösterilmektedir).', 'success');
         }
+        showToast('Yeni token üretildi ve panoya kopyalandı.', 'success');
       });
       btnCopy?.addEventListener('click', async () => {
         if (typeof (api as any).botServer?.copyToken === 'function') {

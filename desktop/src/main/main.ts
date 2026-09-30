@@ -593,7 +593,12 @@ function setupIPC(): void {
     }
     return botServer.setAuthEnabled(enable);
   });
-  ipcMain.handle('botServer:regenerateToken', () => botServer.regenerateToken());
+  ipcMain.handle('botServer:regenerateToken', () => {
+    const auth = botServer.regenerateToken();
+    const raw = botServer.getRawToken();
+    if (raw) clipboard.writeText(raw);
+    return auth;
+  });
   ipcMain.handle('botServer:copyToken', () => {
     const raw = botServer.getRawToken();
     if (raw) clipboard.writeText(raw);

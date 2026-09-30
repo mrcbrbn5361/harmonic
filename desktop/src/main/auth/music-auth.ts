@@ -347,11 +347,6 @@ export class MusicAuth {
       }
     }
     const legacy = await this.importFromChromeLegacy();
-    if (legacy.success) {
-      const prof = await this.fetchProfileViaAPI().catch(()=>null);
-      if(prof && prof.name) this.store.set('musicUser', { id:'ytmusic', name:prof.name, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
-      return legacy;
-    }
     return legacy;
   }
   async importFromTarget(targetId: string): Promise<{ success: boolean; cookies: number; error?: string }> {
@@ -429,23 +424,20 @@ export class MusicAuth {
         } catch {}
       }
       if (written > 0) {
-        // Cookie'ler yazıldıktan sonra adaptif yoklama ile profil API'sini sorgula (max 1.0sn)
         let prof: { name: string; email: string; picture: string } | null = null;
-        for (let i = 0; i < 5; i++) {
-          prof = await this.fetchProfileViaAPI().catch(() => null);
-          if (prof && (prof.name || prof.email)) break;
-          await new Promise((r) => setTimeout(r, 200));
-        }
+        // M-13 Uçtan uca toplam profil çözümleme tavanı kesin olarak <= 5.0 saniye ile sınırlandırılır
+        const totalDeadline = Date.now() + 4800;
+
+        // 1. Önce doğrudan CDP ile dene (Chrome'da açık sayfayı kullanır, max 1.6sn, DOM gelince anında erken çıkışlı)
+        try {
+          prof = await this.fetchProfileViaCDP(client);
+        } catch {}
+
+        // 2. CDP ile profil bulunamadıysa ve kalan süre varsa tek seferlik hidden-window API sorgusu yap
         if (!prof || (!prof.name && !prof.email)) {
-          // CDP ile dene (Chrome'da açık sayfayı kullan, max 1.6sn)
-          prof = await this.fetchProfileViaCDP(client).catch(() => null);
-        }
-        // Hâlâ bulunamadıysa kısa aralıklarla (200ms x 3 = 600ms tavan) son bir kez dene
-        if (!prof || (!prof.name && !prof.email)) {
-          for (let i = 0; i < 3; i++) {
-            await new Promise((r) => setTimeout(r, 200));
-            prof = await this.fetchProfileViaAPI().catch(() => null);
-            if (prof && (prof.name || prof.email)) break;
+          const remaining = totalDeadline - Date.now();
+          if (remaining > 500) {
+            prof = await this.fetchProfileViaAPI(remaining).catch(() => null);
           }
         }
         // Google hesabından gerçek ismi al (YouTube Music API çoğu zaman isim dönmüyor)
@@ -473,34 +465,66 @@ export class MusicAuth {
   }
 
   // Gerçek profil: ytd-active-account-header-renderer ham verisi (verdiğin dump) doğrudan
-  async fetchProfileViaAPI(): Promise<{ name: string; email: string; picture: string } | null> {
-    // 1. Hidden window ile music.youtube.com DOM'undan direkt çek — 10sn bekle, ytd render gelene kadar
+  async fetchProfileViaAPI(timeoutMs = 3200): Promise<{ name: string; email: string; picture: string } | null> {
+    const deadline = Date.now() + timeoutMs;
+    const remainingTime = () => Math.max(0, deadline - Date.now());
+
+    // 1. Hidden window ile music.youtube.com DOM'undan direkt çek
+    let win: BrowserWindow | null = null;
+    let destroyTimeout: NodeJS.Timeout | null = null;
     try {
       const cookies = await this.getSession().cookies.get({ url: 'https://music.youtube.com' });
       if (cookies.some(c=>c.name==='SAPISID' || c.name==='LOGIN_INFO')) {
-        const win = new BrowserWindow({ show:false, width:1024, height:700, webPreferences:{ partition: MUSIC_PARTITION } });
+        if (remainingTime() < 600) return null;
+        win = new BrowserWindow({ show:false, width:1024, height:700, webPreferences:{ partition: MUSIC_PARTITION } });
         try { (win.webContents as any).setUserAgent(CHROME_UA); } catch {}
-        await win.loadURL('https://music.youtube.com/');
-        // sayfa + nav-bar avatar yüklenene kadar en fazla 2.5sn bekle (250ms aralıklarla)
-        for (let i = 0; i < 10; i++) {
+
+        // Timeout koruması: Süre aşımında pencereyi kapat ve bellek sızıntısını önle
+        destroyTimeout = setTimeout(() => {
+          try {
+            if (win && !win.isDestroyed()) {
+              win.destroy();
+            }
+          } catch {}
+        }, remainingTime());
+
+        // loadURL'i kalan süreyle sınırla
+        await Promise.race([
+          win.loadURL('https://music.youtube.com/'),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), remainingTime()))
+        ]);
+
+        if (win.isDestroyed()) return null;
+
+        // sayfa + nav-bar avatar yüklenene kadar bekle (200ms aralıklarla, deadline korumalı)
+        const pollNavBarEnd = Math.min(deadline - 800, Date.now() + 1800);
+        while (Date.now() < pollNavBarEnd && !win.isDestroyed()) {
           try {
             const has = await win.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`, true);
             if (has) break;
           } catch {}
-          await new Promise(r => setTimeout(r, 250));
+          await new Promise(r => setTimeout(r, 200));
         }
+
+        if (win.isDestroyed()) return null;
+
         // hesap menüsü kapalıyken header renderer DOM'da olmaz — avatar'a tıklayıp aç (saf JS, TypeScript casting yok)
         try {
           await win.webContents.executeJavaScript(`(function(){ const b=document.querySelector('ytmusic-nav-bar #avatar button')||document.querySelector('ytmusic-nav-bar #avatar')||document.querySelector('#avatar-btn'); if(b && typeof b.click === 'function'){ b.click(); } })()`, true);
         } catch {}
-        // Menü açılana kadar en fazla 1.5sn bekle (250ms aralıklarla)
-        for (let i = 0; i < 6; i++) {
+
+        // Menü açılana kadar bekle (200ms aralıklarla, deadline korumalı)
+        const pollMenuEnd = Math.min(deadline - 300, Date.now() + 1000);
+        while (Date.now() < pollMenuEnd && !win.isDestroyed()) {
           try {
             const has = await win.webContents.executeJavaScript(`!!(document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`, true);
             if (has) break;
           } catch {}
-          await new Promise(r => setTimeout(r, 250));
+          await new Promise(r => setTimeout(r, 200));
         }
+
+        if (win.isDestroyed()) return null;
+
         try {
           const data: any = await win.webContents.executeJavaScript(`(function(){
             const acc=document.querySelector('ytd-active-account-header-renderer');
@@ -516,14 +540,14 @@ export class MusicAuth {
               if(!email && handle) email=handle;
             }
             if(!picture){
-              const m=document.documentElement.innerHTML.match(/https:\/\/yt3\.ggpht\.com\/[^"']*\/[^"']*s108[^"']*/);
+              const m=document.documentElement.innerHTML.match(/https:\\/\\/yt3\\.ggpht\\.com\\/[^"']*\\/[^"']*s108[^"']*/);
               if(m) picture=m[0];
               else {
-                const m2=document.documentElement.innerHTML.match(/https:\/\/yt3\.ggpht\.com\/[^"']+/);
+                const m2=document.documentElement.innerHTML.match(/https:\\/\\/yt3\\.ggpht\\.com\\/[^"']+/);
                 if(m2) picture=m2[0];
               }
             }
-            if(picture) { picture=picture.replace(/=s\d+[^"]*/, '=s400-c-k-c0x00ffffff-no-rj').replace(/=w\d+.*/, '=s400-c-k-c0x00ffffff-no-rj'); }
+            if(picture) { picture=picture.replace(/=s\\d+[^"]*/, '=s400-c-k-c0x00ffffff-no-rj').replace(/=w\\d+.*/, '=s400-c-k-c0x00ffffff-no-rj'); }
             if(!name) {
               const n2=document.querySelector('#account-name'); if(n2) name=n2.getAttribute('title')||n2.textContent||'';
               if(!name){
@@ -538,96 +562,123 @@ export class MusicAuth {
             return JSON.stringify({name: (name||'').trim(), email: (email||'').trim(), picture: (picture||'').trim(), handle: (handle||'').trim()});
           })()`, true);
           const parsed = typeof data==='string' ? JSON.parse(data) : data;
-          win.destroy();
           const validName = parsed && parsed.name && parsed.name.length>1 && parsed.name!=='Y' && parsed.name!=='YouTube Music' ? parsed.name : '';
           if (validName || (parsed && parsed.picture)) {
             logger.debug('[Auth] Hidden window profil OK:', validName || '(sadece pp)', parsed.picture ? 'pp var' : 'pp yok');
             return { name: validName, email: (parsed.email||'').startsWith('@')?'':parsed.email, picture: parsed.picture||'' };
           }
           logger.error('[Auth] Hidden window profil bulunamadı');
-        } catch { try{ win.destroy(); } catch{} }
+        } catch {}
       }
-    } catch {}
-    // 2. Direct fetch HTML fallback
-    try {
-      const cookies = await this.getSession().cookies.get({ url: 'https://music.youtube.com' });
-      const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-      if (cookieHeader.includes('SAPISID') || cookieHeader.includes('LOGIN_INFO')) {
-        const htmlRes = await fetch('https://music.youtube.com/', {
-          headers: { 'Cookie': cookieHeader, 'User-Agent': CHROME_UA, 'Accept-Language': 'tr-TR,tr;q=0.9' }
-        });
-        if (htmlRes.ok) {
-          const html = await htmlRes.text();
-          const mName = html.match(/id="account-name"[^>]*title="([^"]+)"/) || html.match(/id="account-name"[^>]*>([^<]+)</);
-          const mPic = html.match(/id="avatar"[^]*?src="([^"]+(?:googleusercontent|ggpht\.com)[^"]+)"/);
-          const mHandle = html.match(/id="channel-handle"[^>]*title="([^"]+)"/);
-          const mEmail = html.match(/id="email"[^>]*title="([^"]+)"/);
-          const name = (mName?.[1]||'').trim();
-          const picture = (mPic?.[1]||'').trim();
-          const email = (mEmail?.[1]||mHandle?.[1]||'').trim();
-          if (name && name.length>1 && name!=='Y') {
-            logger.debug('[Auth] HTML fetch profil OK:', name);
-            return { name, email: email.startsWith('@')?'':email, picture };
+    } catch {} finally {
+      if (destroyTimeout) clearTimeout(destroyTimeout);
+      try {
+        if (win && !win.isDestroyed()) {
+          win.destroy();
+        }
+      } catch {}
+      win = null;
+    }
+    // 2. Direct fetch HTML fallback (sadece kalan süre varsa)
+    if (remainingTime() > 400) {
+      try {
+        const cookies = await this.getSession().cookies.get({ url: 'https://music.youtube.com' });
+        const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+        if (cookieHeader.includes('SAPISID') || cookieHeader.includes('LOGIN_INFO')) {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), remainingTime());
+          try {
+            const htmlRes = await fetch('https://music.youtube.com/', {
+              headers: { 'Cookie': cookieHeader, 'User-Agent': CHROME_UA, 'Accept-Language': 'tr-TR,tr;q=0.9' },
+              signal: controller.signal
+            });
+            if (htmlRes.ok) {
+              const html = await htmlRes.text();
+              const mName = html.match(/id="account-name"[^>]*title="([^"]+)"/) || html.match(/id="account-name"[^>]*>([^<]+)</);
+              const mPic = html.match(/id="avatar"[^]*?src="([^"]+(?:googleusercontent|ggpht\.com)[^"]+)"/);
+              const mHandle = html.match(/id="channel-handle"[^>]*title="([^"]+)"/);
+              const mEmail = html.match(/id="email"[^>]*title="([^"]+)"/);
+              const name = (mName?.[1]||'').trim();
+              const picture = (mPic?.[1]||'').trim();
+              const email = (mEmail?.[1]||mHandle?.[1]||'').trim();
+              if (name && name.length>1 && name!=='Y') {
+                logger.debug('[Auth] HTML fetch profil OK:', name);
+                return { name, email: email.startsWith('@')?'':email, picture };
+              }
+            }
+          } finally {
+            clearTimeout(timer);
           }
         }
-      }
-    } catch {}
-    try {
-      const cookies = await this.getSession().cookies.get({ url: 'https://music.youtube.com' });
-      if (!cookies.length) {
-        logger.error('[Auth] API profil: cookie yok');
-        return null;
-      }
-      const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
-      const res = await fetch('https://music.youtube.com/youtubei/v1/account/account_menu', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Cookie': cookieHeader,
-          'Origin': 'https://music.youtube.com',
-          'Referer': 'https://music.youtube.com/',
-          'User-Agent': CHROME_UA
-        },
-        body: JSON.stringify({
-          context: { client: { hl: 'tr', gl: 'TR', clientName: 'WEB_REMIX', clientVersion: YT_CLIENT_VERSION } }
-        })
-      });
-      if (!res.ok) {
-        const errText = await res.text();
-        logger.error('[Auth] API profil HTTP:', res.status, '-', errText.substring(0, 200));
-        return null;
-      }
-      const data: any = await res.json();
-      logger.debug('[Auth] API profil ham veri anahtarları:', Object.keys(data).slice(0, 15));
-      const item = this.findAccountItem(data);
-      if (item) {
-        const name = this.runsText(item.accountName);
-        const picture = item.accountPhoto?.thumbnails?.slice(-1)?.[0]?.url || '';
-        const email = this.runsText(item.accountBylineText)
-          || this.runsText(item.accountEmail)
-          || this.extractEmail(JSON.stringify(data));
-        if (name || email) {
-          logger.debug('[Auth] API profil OK:', name || email);
-          return { name, email, picture };
-        }
-      }
-      // Yedek: ham metinde hesap adı/e-posta regex'i
-      const raw = JSON.stringify(data);
-      const nm = raw.match(/"accountName":\s*\{\s*"simpleText":\s*"((?:[^"\\]|\\.)*)"/)
-        || raw.match(/"accountName":\s*\{\s*"runs":\s*\[\s*\{\s*"text":\s*"((?:[^"\\]|\\.)*)"/);
-      const name = nm ? nm[1] : '';
-      const emailMatch = raw.match(/"accountEmail":\s*\{\s*"simpleText":\s*"((?:[^"\\]|\\.)*)"/);
-      const email = emailMatch ? emailMatch[1] : '';
-      if ((name && name !== 'Guide' && name.length > 1) || email) {
-        logger.debug('[Auth] API profil OK (regex):', name || email);
-        return { name: (name === 'Guide') ? '' : name, email, picture: '' };
-      }
-      logger.error('[Auth] API profil: accountItem bulunamadı');
-      return null;
-    } catch (e: any) {
-      logger.error('[Auth] API profil hatası:', e?.message || e);
-      return null;
+      } catch {}
     }
+    // 3. YouTube Music API /account_menu fallback (sadece kalan süre varsa)
+    if (remainingTime() > 400) {
+      try {
+        const cookies = await this.getSession().cookies.get({ url: 'https://music.youtube.com' });
+        if (!cookies.length) {
+          logger.error('[Auth] API profil: cookie yok');
+          return null;
+        }
+        const cookieHeader = cookies.map((c) => `${c.name}=${c.value}`).join('; ');
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), remainingTime());
+        try {
+          const res = await fetch('https://music.youtube.com/youtubei/v1/account/account_menu', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Cookie': cookieHeader,
+              'Origin': 'https://music.youtube.com',
+              'Referer': 'https://music.youtube.com/',
+              'User-Agent': CHROME_UA
+            },
+            body: JSON.stringify({
+              context: { client: { hl: 'tr', gl: 'TR', clientName: 'WEB_REMIX', clientVersion: YT_CLIENT_VERSION } }
+            }),
+            signal: controller.signal
+          });
+          if (!res.ok) {
+            const errText = await res.text();
+            logger.error('[Auth] API profil HTTP:', res.status, '-', errText.substring(0, 200));
+            return null;
+          }
+          const data: any = await res.json();
+          logger.debug('[Auth] API profil ham veri anahtarları:', Object.keys(data).slice(0, 15));
+          const item = this.findAccountItem(data);
+          if (item) {
+            const name = this.runsText(item.accountName);
+            const picture = item.accountPhoto?.thumbnails?.slice(-1)?.[0]?.url || '';
+            const email = this.runsText(item.accountBylineText)
+              || this.runsText(item.accountEmail)
+              || this.extractEmail(JSON.stringify(data));
+            if (name || email) {
+              logger.debug('[Auth] API profil OK:', name || email);
+              return { name, email, picture };
+            }
+          }
+          // Yedek: ham metinde hesap adı/e-posta regex'i
+          const raw = JSON.stringify(data);
+          const nm = raw.match(/"accountName":\s*\{\s*"simpleText":\s*"((?:[^"\\]|\\.)*)"/)
+            || raw.match(/"accountName":\s*\{\s*"runs":\s*\[\s*\{\s*"text":\s*"((?:[^"\\]|\\.)*)"/);
+          const name = nm ? nm[1] : '';
+          const emailMatch = raw.match(/"accountEmail":\s*\{\s*"simpleText":\s*"((?:[^"\\]|\\.)*)"/);
+          const email = emailMatch ? emailMatch[1] : '';
+          if ((name && name !== 'Guide' && name.length > 1) || email) {
+            logger.debug('[Auth] API profil OK (regex):', name || email);
+            return { name: (name === 'Guide') ? '' : name, email, picture: '' };
+          }
+          logger.error('[Auth] API profil: accountItem bulunamadı');
+          return null;
+        } finally {
+          clearTimeout(timer);
+        }
+      } catch (e: any) {
+        logger.error('[Auth] API profil hatası:', e?.message || e);
+        return null;
+      }
+    }
+    return null;
   }
 
   private findAccountItem(node: any): any {

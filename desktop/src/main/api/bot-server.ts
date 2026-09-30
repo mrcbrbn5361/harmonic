@@ -136,10 +136,10 @@ export class BotServer {
     return this.getAuth();
   }
 
-  public regenerateToken(): string {
+  public regenerateToken(): { enabled: boolean; token: string; masked: boolean } {
     const t = randomBytes(24).toString('hex');
     try { authStore.set('botToken', t); } catch {}
-    return t;
+    return this.getAuth();
   }
 
   private isAuthorized(req: http.IncomingMessage): boolean {
