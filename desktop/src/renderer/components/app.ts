@@ -70,8 +70,14 @@ import {
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
   const $$ = (sel: string) => document.querySelectorAll(sel);
 
-  function escapeHtml(str: string): string {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  function escapeHtml(str: any): string {
+    if (str === null || str === undefined) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   function formatTime(sec: number, padMinutes = false): string {
@@ -1689,7 +1695,7 @@ function updatePlayIcon() {
       listEl.innerHTML = playlists.map((pl) => {
         const hasSong = (pl.songs || []).some((s: any) => s.id === song.id);
         return `
-          <button class="btn btn-ghost" data-pl-id="${pl.id}" style="width:100%;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);cursor:pointer;display:flex;align-items:center;">
+          <button class="btn btn-ghost" data-pl-id="${escapeHtml(pl.id)}" style="width:100%;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);cursor:pointer;display:flex;align-items:center;">
             <div style="display:flex;align-items:center;gap:10px;text-align:left;">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
               <div>
@@ -2099,7 +2105,7 @@ function updatePlayIcon() {
         html += `<div style="margin-bottom:24px">
           <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Özel Listelerim</h3>
           <div class="card-grid">${localPlaylists.map((pl: any) => `
-            <div class="card" data-local-pl="${pl.id}" style="cursor:pointer">
+            <div class="card" data-local-pl="${escapeHtml(pl.id)}" style="cursor:pointer">
               <div class="card-thumb" style="background:var(--c-bg-3);display:flex;align-items:center;justify-content:center;color:var(--c-accent)">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
               </div>
@@ -2407,7 +2413,7 @@ function updatePlayIcon() {
       return;
     }
     container.innerHTML = playlists.map((pl: any) => `
-      <a class="nav-link" href="#" data-pl="${pl.id}">
+      <a class="nav-link" href="#" data-pl="${escapeHtml(pl.id)}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
         <span>${escapeHtml(pl.name)}</span>
       </a>

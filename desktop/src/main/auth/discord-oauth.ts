@@ -49,11 +49,21 @@ function avatarUrl(id: string, avatar: string | null): string {
   return `https://cdn.discordapp.com/avatars/${id}/${avatar}.${ext}?size=128`;
 }
 
+function escapeHtml(str: any): string {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const SUCCESS_HTML = (name: string) => `
   <html><body style="font-family:sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     <div style="text-align:center">
       <h1 style="color:#2ecc71">Giriş başarılı!</h1>
-      <p>${name} olarak giriş yapıldı.</p>
+      <p>${escapeHtml(name)} olarak giriş yapıldı.</p>
       <p style="color:#666;font-size:12px;margin-top:16px">Bu pencere otomatik kapanacak...</p>
     </div>
   </body></html>`;
@@ -61,7 +71,7 @@ const ERROR_HTML = (msg: string) => `
   <html><body style="font-family:sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
     <div style="text-align:center">
       <h1 style="color:#e8364e">Giriş başarısız</h1>
-      <p>${msg}</p>
+      <p>${escapeHtml(msg)}</p>
       <p style="color:#666;font-size:12px;margin-top:16px">Bu pencereyi kapatabilirsiniz.</p>
     </div>
   </body></html>`;

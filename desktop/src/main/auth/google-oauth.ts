@@ -5,6 +5,16 @@ import Store from 'electron-store';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from './google-credentials';
 import { logger } from '../utils/logger';
 
+function escapeHtml(str: any): string {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 interface OAuthTokens {
   access_token: string;
   refresh_token?: string;
@@ -114,12 +124,13 @@ export class GoogleOAuth {
         logger.debug('[Google OAuth] Callback received, code:', code ? 'var' : 'yok', 'error:', error);
 
         if (error || !code) {
+          const displayErr = error === 'access_denied' ? 'Giriş iptal edildi.' : (error || 'Kod alınamadı');
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(`
             <html><body style="font-family:sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
               <div style="text-align:center">
                 <h1 style="color:#e8364e">Giriş başarısız</h1>
-                <p>${error === 'access_denied' ? 'Giriş iptal edildi.' : error || 'Kod alınamadı'}</p>
+                <p>${escapeHtml(displayErr)}</p>
                 <p style="color:#666;font-size:12px;margin-top:16px">Bu pencereyi kapatabilirsiniz.</p>
               </div>
             </body></html>
@@ -182,7 +193,7 @@ export class GoogleOAuth {
             <html><body style="font-family:sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
               <div style="text-align:center">
                 <h1 style="color:#2ecc71">Giriş başarılı!</h1>
-                <p>${user.name} olarak giriş yapıldı.</p>
+                <p>${escapeHtml(user.name)} olarak giriş yapıldı.</p>
                 <p style="color:#666;font-size:12px;margin-top:16px">Bu pencere otomatik kapanacak...</p>
               </div>
             </body></html>
@@ -197,7 +208,7 @@ export class GoogleOAuth {
             <html><body style="font-family:sans-serif;background:#0a0a0a;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
               <div style="text-align:center">
                 <h1 style="color:#e8364e">Hata</h1>
-                <p>${err.message}</p>
+                <p>${escapeHtml(err.message)}</p>
                 <p style="color:#666;font-size:12px;margin-top:16px">Bu pencere otomatik kapanacak...</p>
               </div>
             </body></html>
