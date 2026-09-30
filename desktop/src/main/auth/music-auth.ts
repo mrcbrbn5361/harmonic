@@ -163,7 +163,8 @@ export class MusicAuth {
       const authed = await this.isAuthenticated();
       if (!authed) return;
       logger.debug('[Auth] Profil yenileniyor (pp eksik)...');
-      const prof = await this.fetchProfileViaAPI().catch(() => null);
+      // M-13: Tavan süre <= 4000ms ile sınırlandırılır
+      const prof = await this.fetchProfileViaAPI(4000).catch(() => null);
       if (prof && (prof.name || prof.email || prof.picture)) {
         const merged: MusicUser = {
           id: 'ytmusic',
@@ -229,6 +230,10 @@ export class MusicAuth {
   // Artık loginWindow'un kendi session'ında cookie zaten var — direkt profili çekip kapat
   async importFromChrome(): Promise<{ success: boolean; cookies: number; error?: string }> {
     try {
+      // M-13 Uçtan uca toplam profil çözümleme tavanı kesin olarak <= 5.0 saniye ile sınırlandırılır
+      const totalDeadline = Date.now() + 4800;
+      const remainingTime = () => Math.max(0, totalDeadline - Date.now());
+
       const ses=this.getSession();
       // tüm domainlerde ara — accounts.google.com'da cookie olabilir ama music.youtube.com'da henüz yok
       const urls=['https://music.youtube.com','https://accounts.google.com','https://youtube.com','https://www.youtube.com'];
@@ -249,6 +254,7 @@ export class MusicAuth {
             if (!curUrl.includes('music.youtube.com')) {
               await this.loginWindow.webContents.loadURL('https://music.youtube.com/');
               for (let i = 0; i < 8; i++) {
+                if (remainingTime() < 600) break;
                 try {
                   const has = await this.loginWindow!.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('#account-name'))`, true);
                   if (has) break;
@@ -263,6 +269,7 @@ export class MusicAuth {
           } catch {}
           // Menü açılana kadar en fazla 1.5sn bekle (250ms aralıklarla)
           for (let i = 0; i < 6; i++) {
+            if (remainingTime() < 500) break;
             try {
               const has = await this.loginWindow.webContents.executeJavaScript(`!!document.querySelector('ytd-active-account-header-renderer #account-name')`, true);
               if (has) break;
@@ -287,21 +294,24 @@ export class MusicAuth {
           if(parsed && (parsed.name || parsed.picture)) prof = { name: parsed.name, email: parsed.email, picture: parsed.picture };
         }
       } catch {}
-      // 2. yol: hidden window ile DOM çek (pp VEYA isim eksikse dene)
+      // 2. yol: hidden window ile DOM çek (pp VEYA isim eksikse dene, kalan süre varsa)
       if (!prof || !prof.picture || !prof.name) {
-        try {
-          const hProf = await this.fetchProfileViaAPI().catch(()=>null);
-          if(hProf){
-            // Merge: mevcut veriyi koru, sadece boş alanları doldur
-            if(!prof) prof = { name:'', email:'', picture:'' };
-            if(hProf.picture && (hProf.picture.includes('googleusercontent')||hProf.picture.includes('ggpht.com')) && !prof.picture) prof.picture = hProf.picture;
-            if(hProf.name && hProf.name.length>1 && !prof.name) prof.name = hProf.name;
-            if(hProf.email && !prof.email) prof.email = hProf.email;
-          }
-        } catch {}
+        const rem = remainingTime();
+        if (rem > 600) {
+          try {
+            const hProf = await this.fetchProfileViaAPI(rem).catch(()=>null);
+            if(hProf){
+              // Merge: mevcut veriyi koru, sadece boş alanları doldur
+              if(!prof) prof = { name:'', email:'', picture:'' };
+              if(hProf.picture && (hProf.picture.includes('googleusercontent')||hProf.picture.includes('ggpht.com')) && !prof.picture) prof.picture = hProf.picture;
+              if(hProf.name && hProf.name.length>1 && !prof.name) prof.name = hProf.name;
+              if(hProf.email && !prof.email) prof.email = hProf.email;
+            }
+          } catch {}
+        }
       }
-      // 3. yol: CDP (hâlâ isim yoksa)
-      if (!prof || !prof.name) {
+      // 3. yol: CDP (hâlâ isim yoksa, kalan süre varsa)
+      if ((!prof || !prof.name) && remainingTime() > 400) {
         try {
           const cdpProf = await this.fetchProfileViaCDP(null as any).catch(()=>null);
           if(cdpProf){
@@ -338,20 +348,25 @@ export class MusicAuth {
   }
   // Dis Chrome'daki acik YouTube Music'i dogrudan target ID ile ice aktar
   async importFromExternalChrome(targetId?: string): Promise<{ success: boolean; cookies: number; error?: string }> {
+    const totalDeadline = Date.now() + 4800; // M-13 Uçtan uca toplam tavan <= 5.0 saniye
     if (targetId) {
-      const byTarget = await this.importFromTarget(targetId);
+      const byTarget = await this.importFromTarget(targetId, totalDeadline);
       if (byTarget.success) {
-        const prof = await this.fetchProfileViaAPI().catch(()=>null);
-        if(prof && prof.name) this.store.set('musicUser', { id:'ytmusic', name:prof.name, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
+        const remaining = totalDeadline - Date.now();
+        if (remaining > 500) {
+          const prof = await this.fetchProfileViaAPI(remaining).catch(()=>null);
+          if(prof && prof.name) this.store.set('musicUser', { id:'ytmusic', name:prof.name, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
+        }
         return byTarget;
       }
     }
-    const legacy = await this.importFromChromeLegacy();
+    const legacy = await this.importFromChromeLegacy(totalDeadline);
     return legacy;
   }
-  async importFromTarget(targetId: string): Promise<{ success: boolean; cookies: number; error?: string }> {
+  async importFromTarget(targetId: string, totalDeadline = Date.now() + 4800): Promise<{ success: boolean; cookies: number; error?: string }> {
     let client: any;
     try {
+      if (totalDeadline - Date.now() < 500) throw new Error('timeout');
       // Once targetId ile baglanmayı dene
       for (const port of CHROME_DEBUG_PORTS) {
         try { client = await CDP({ host: '127.0.0.1', port, target: targetId }); if (client) break; } catch {}
@@ -373,9 +388,10 @@ export class MusicAuth {
       return written>0 ? { success:true, cookies:written } : { success:false, cookies:0, error:'Cookie yazılamadı.' };
     } catch(e:any){ return { success:false, cookies:0, error:e?.message||String(e)} } finally { try{ await client?.close(); }catch{} }
   }
-  async importFromChromeLegacy(): Promise<{ success: boolean; cookies: number; error?: string }> {
+  async importFromChromeLegacy(totalDeadline = Date.now() + 4800): Promise<{ success: boolean; cookies: number; error?: string }> {
     let client: any;
     try {
+      if (totalDeadline - Date.now() < 500) throw new Error('timeout');
       let lastErr:any=null;
       for (const port of CHROME_DEBUG_PORTS) {
         try { client = await CDP({ host: '127.0.0.1', port }); if(client) break; } catch(e){ lastErr=e; }
@@ -426,11 +442,11 @@ export class MusicAuth {
       if (written > 0) {
         let prof: { name: string; email: string; picture: string } | null = null;
         // M-13 Uçtan uca toplam profil çözümleme tavanı kesin olarak <= 5.0 saniye ile sınırlandırılır
-        const totalDeadline = Date.now() + 4800;
-
         // 1. Önce doğrudan CDP ile dene (Chrome'da açık sayfayı kullanır, max 1.6sn, DOM gelince anında erken çıkışlı)
         try {
-          prof = await this.fetchProfileViaCDP(client);
+          if (totalDeadline - Date.now() > 500) {
+            prof = await this.fetchProfileViaCDP(client);
+          }
         } catch {}
 
         // 2. CDP ile profil bulunamadıysa ve kalan süre varsa tek seferlik hidden-window API sorgusu yap

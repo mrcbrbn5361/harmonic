@@ -2701,6 +2701,10 @@ function updatePlayIcon() {
         if (a) {
           botAuthToggle.checked = !!a.enabled;
           if (botTokenInput) botTokenInput.value = a.token || '';
+          if (desired !== !!a.enabled) {
+            showToast('İşlem iptal edildi.', 'info');
+            return;
+          }
         }
         showToast(a?.enabled ? 'Token koruması açıldı.' : 'Token koruması kapatıldı (açık mod).', a?.enabled ? 'info' : 'warning');
       });
@@ -2713,12 +2717,13 @@ function updatePlayIcon() {
         showToast('Yeni token üretildi ve panoya kopyalandı.', 'success');
       });
       btnCopy?.addEventListener('click', async () => {
-        if (typeof (api as any).botServer?.copyToken === 'function') {
-          await (api as any).botServer.copyToken();
-          showToast('Bot token panoya kopyalandı.', 'success');
-        } else if (botTokenInput?.value) {
-          await navigator.clipboard.writeText(botTokenInput.value);
-          showToast('Bot token panoya kopyalandı.', 'success');
+        try {
+          if (typeof (api as any).botServer?.copyToken === 'function') {
+            await (api as any).botServer.copyToken();
+            showToast('Bot token panoya kopyalandı.', 'success');
+          }
+        } catch {
+          showToast('Token panoya kopyalanamadı.', 'error');
         }
       });
     }

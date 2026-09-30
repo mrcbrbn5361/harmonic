@@ -86,6 +86,64 @@ export interface BotServerState {
   updatedAt: number;
 }
 
+export function sanitizeBotStateUpdate(input: unknown): Partial<BotServerState> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {};
+  }
+  const raw = input as Record<string, unknown>;
+  const clean: Partial<BotServerState> = {};
+
+  if (typeof raw.status === 'string' && (raw.status === 'playing' || raw.status === 'paused' || raw.status === 'stopped')) {
+    clean.status = raw.status;
+  }
+  if (typeof raw.isPlaying === 'boolean') {
+    clean.isPlaying = raw.isPlaying;
+  }
+  if (raw.track === null) {
+    clean.track = null;
+  } else if (raw.track && typeof raw.track === 'object' && !Array.isArray(raw.track)) {
+    const t = raw.track as Record<string, unknown>;
+    clean.track = {
+      title: typeof t.title === 'string' ? t.title.slice(0, 300) : '',
+      artist: typeof t.artist === 'string' ? t.artist.slice(0, 300) : '',
+      id: typeof t.id === 'string' ? t.id.slice(0, 100) : undefined,
+      album: typeof t.album === 'string' ? t.album.slice(0, 300) : undefined,
+      thumbnail: typeof t.thumbnail === 'string' ? t.thumbnail.slice(0, 1000) : undefined,
+      artwork: typeof t.artwork === 'string' ? t.artwork.slice(0, 1000) : undefined,
+      duration: typeof t.duration === 'number' && Number.isFinite(t.duration) ? t.duration : undefined,
+      durationFormatted: typeof t.durationFormatted === 'string' ? t.durationFormatted.slice(0, 50) : undefined,
+      currentTime: typeof t.currentTime === 'number' && Number.isFinite(t.currentTime) ? t.currentTime : undefined,
+      currentTimeFormatted: typeof t.currentTimeFormatted === 'string' ? t.currentTimeFormatted.slice(0, 50) : undefined,
+      timeString: typeof t.timeString === 'string' ? t.timeString.slice(0, 50) : undefined,
+      progress: typeof t.progress === 'number' && Number.isFinite(t.progress) ? Math.max(0, Math.min(100, t.progress)) : undefined,
+      url: typeof t.url === 'string' ? t.url.slice(0, 1000) : undefined
+    };
+  }
+  if (Array.isArray(raw.recommendations)) {
+    clean.recommendations = raw.recommendations
+      .slice(0, 50)
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && !Array.isArray(r))
+      .map(r => ({
+        id: typeof r.id === 'string' ? r.id.slice(0, 100) : undefined,
+        title: typeof r.title === 'string' ? r.title.slice(0, 300) : '',
+        artist: typeof r.artist === 'string' ? r.artist.slice(0, 300) : '',
+        thumbnail: typeof r.thumbnail === 'string' ? r.thumbnail.slice(0, 1000) : undefined,
+        url: typeof r.url === 'string' ? r.url.slice(0, 1000) : undefined
+      }));
+  }
+  if (typeof raw.lyrics === 'string') {
+    clean.lyrics = raw.lyrics.slice(0, 50000);
+  }
+  if (typeof raw.syncedLyrics === 'string') {
+    clean.syncedLyrics = raw.syncedLyrics.slice(0, 50000);
+  }
+  if (typeof raw.currentLyricLine === 'string') {
+    clean.currentLyricLine = raw.currentLyricLine.slice(0, 1000);
+  }
+
+  return clean;
+}
+
 export class BotServer {
   private server: http.Server | null = null;
   private port: number = 9863;
@@ -152,10 +210,11 @@ export class BotServer {
     return verifyBearerToken(req.headers.authorization, ensureToken());
   }
 
-  public updateState(partial: Partial<BotServerState>): void {
+  public updateState(partial: unknown): void {
+    const clean = sanitizeBotStateUpdate(partial);
     this.state = {
       ...this.state,
-      ...partial,
+      ...clean,
       updatedAt: Date.now()
     };
   }

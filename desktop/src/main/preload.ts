@@ -113,7 +113,7 @@ const api = {
     toggle: (enable: boolean) => ipcRenderer.invoke('botServer:toggle', enable),
     getStatus: () => ipcRenderer.invoke('botServer:getStatus'),
     getAuth: () => ipcRenderer.invoke('botServer:getAuth'),
-    setAuthEnabled: (enable: boolean, confirmed?: boolean) => ipcRenderer.invoke('botServer:setAuthEnabled', enable, confirmed),
+    setAuthEnabled: (enable: boolean) => ipcRenderer.invoke('botServer:setAuthEnabled', enable),
     regenerateToken: () => ipcRenderer.invoke('botServer:regenerateToken'),
     copyToken: () => ipcRenderer.invoke('botServer:copyToken'),
   },

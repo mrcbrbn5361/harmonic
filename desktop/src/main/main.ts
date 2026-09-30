@@ -11,7 +11,7 @@ import { authProvider } from './providers/auth-provider';
 import { volumeRatioProvider } from './providers/volume-ratio';
 import { lyricsProvider } from './providers/lyrics-provider';
 import { autoUpdater } from 'electron-updater';
-import { BotServer } from './api/bot-server';
+import { BotServer, sanitizeBotStateUpdate } from './api/bot-server';
 import { logger } from './utils/logger';
 
 // Gizli çözücü penceresinde otomatik oynatmaya izin ver (kullanıcı hareketi gerekmesin)
@@ -552,7 +552,7 @@ function setupIPC(): void {
   // ── Discord Bot REST API (Port 9863) ───────
   ipcMain.handle('botServer:getState', () => botServer.getState());
   ipcMain.handle('botServer:updateState', (_, data) => {
-    botServer.updateState(data);
+    botServer.updateState(sanitizeBotStateUpdate(data));
     return true;
   });
   ipcMain.handle('botServer:toggle', async (_, enable: boolean) => {
@@ -569,12 +569,12 @@ function setupIPC(): void {
     port: botServer.getPort()
   }));
   ipcMain.handle('botServer:getAuth', () => botServer.getAuth());
-  ipcMain.handle('botServer:setAuthEnabled', async (_, enable: boolean, confirmed?: boolean) => {
+  ipcMain.handle('botServer:setAuthEnabled', async (_, enable: boolean) => {
     if (typeof enable !== 'boolean') return botServer.getAuth();
     if (!enable) {
-      // Güvenlik (M-08): Token korumasını kapatmak kullanıcı onayı (confirmation) gerektirir
-      let userConfirmed = !!confirmed;
-      if (!userConfirmed && mainWindow && !mainWindow.isDestroyed()) {
+      // Güvenlik (M-08): Token korumasını kapatmak ana süreçte kullanıcı onayı gerektirir (renderer atlatamaz)
+      let userConfirmed = false;
+      if (mainWindow && !mainWindow.isDestroyed()) {
         const res = await dialog.showMessageBox(mainWindow, {
           type: 'warning',
           buttons: ['Vazgeç', 'Korumayı Kapat'],
