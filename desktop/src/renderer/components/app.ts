@@ -573,7 +573,8 @@ import {
         });
       });
     } catch (err) {
-      container.innerHTML = '<div class="empty-state"><p class="empty-text">Arama hatası</p><p class="empty-hint-text">Lütfen tekrar deneyin</p></div>';
+      container.innerHTML = '<div class="empty-state"><p class="empty-text">Arama yapılırken bir hata oluştu</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+      container.querySelector('.btn-retry')?.addEventListener('click', () => doSearch(query));
     }
   }
 
@@ -1756,19 +1757,32 @@ function updatePlayIcon() {
     }
 
     body.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
-    const lyrics = await ytLyrics(song.id, song.title, song.artist, song.duration);
-    if (state.currentSong?.id !== song.id) return; // Stale parça
+    try {
+      const lyrics = await ytLyrics(song.id, song.title, song.artist, song.duration);
+      if (state.currentSong?.id !== song.id) return; // Stale parça
 
-    (state as any).currentLyrics = lyrics || null;
-    if ((api as any).botServer) {
-      (api as any).botServer.updateState({ lyrics: lyrics || undefined }).catch(() => {});
-    }
+      (state as any).currentLyrics = lyrics || null;
+      if ((api as any).botServer) {
+        (api as any).botServer.updateState({ lyrics: lyrics || undefined }).catch(() => {});
+      }
 
-    if (lyrics) {
-      renderLyricsContent(lyrics);
-    } else {
+      if (lyrics) {
+        renderLyricsContent(lyrics);
+      } else {
+        currentParsedLyrics = [];
+        body.innerHTML = '<div class="empty-state"><p class="empty-text">Şarkı sözleri bulunamadı</p><p class="empty-hint-text">Bu şarkı için henüz söz eklenmemiş</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+        body.querySelector('.btn-retry')?.addEventListener('click', () => {
+          (state as any).currentLyrics = undefined;
+          loadLyrics();
+        });
+      }
+    } catch {
       currentParsedLyrics = [];
-      body.innerHTML = '<div class="empty-state"><p class="empty-text">Şarkı sözleri bulunamadı</p></div>';
+      body.innerHTML = '<div class="empty-state"><p class="empty-text">Sözler yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+      body.querySelector('.btn-retry')?.addEventListener('click', () => {
+        (state as any).currentLyrics = undefined;
+        loadLyrics();
+      });
     }
   }
 
@@ -1933,7 +1947,8 @@ function updatePlayIcon() {
     console.log('[Harmonic] Home first item:', data?.items?.[0] ? JSON.stringify(data.items[0]) : 'null');
 
     if (!data.items?.length) {
-      container.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edin</p></div>';
+      container.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+      container.querySelector('.btn-retry')?.addEventListener('click', () => loadHome());
       return;
     }
 
@@ -1983,7 +1998,8 @@ function updatePlayIcon() {
     });
     } catch (err) {
       console.error('[Harmonic] loadHome error:', err);
-      container.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edin</p></div>';
+      container.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+      container.querySelector('.btn-retry')?.addEventListener('click', () => loadHome());
     }
   }
 
@@ -2051,7 +2067,8 @@ function updatePlayIcon() {
         });
       });
     } catch {
-      targetContainer.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p></div><button id="btnBrowseBack" class="btn btn-ghost">← Geri</button>';
+      targetContainer.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><div style="display:flex;gap:8px;margin-top:12px;justify-content:center"><button id="btnBrowseRetry" class="btn btn-secondary btn-retry">Tekrar Dene</button><button id="btnBrowseBack" class="btn btn-ghost">← Geri</button></div></div>';
+      targetContainer.querySelector('#btnBrowseRetry')?.addEventListener('click', () => openBrowse(browseId, fallbackTitle, fallbackThumb, onBack));
       targetContainer.querySelector('#btnBrowseBack')?.addEventListener('click', () => {
         if (onBack) onBack();
         else loadHome();
@@ -2073,14 +2090,17 @@ function updatePlayIcon() {
     let ytArtists: any[] = [];
     let ytAlbums: any[] = [];
 
+    let libraryLoadError = false;
     if (state.isLoggedIn) {
       try {
         [ytPlaylists, ytArtists, ytAlbums] = await Promise.all([
-          api.youtube.libraryPlaylists().catch(() => []),
-          api.youtube.libraryArtists().catch(() => []),
-          api.youtube.libraryAlbums().catch(() => [])
+          api.youtube.libraryPlaylists().catch(() => { libraryLoadError = true; return []; }),
+          api.youtube.libraryArtists().catch(() => { libraryLoadError = true; return []; }),
+          api.youtube.libraryAlbums().catch(() => { libraryLoadError = true; return []; })
         ]);
-      } catch {}
+      } catch {
+        libraryLoadError = true;
+      }
     }
 
     if (gen !== state.navGeneration) return; // stale, discard
@@ -2155,6 +2175,11 @@ function updatePlayIcon() {
     }
 
     if (!html) {
+      if (libraryLoadError && state.isLoggedIn) {
+        container.innerHTML = '<div class="empty-state"><p class="empty-text">Kütüphane yüklenemedi</p><p class="empty-hint-text">YouTube Music verileri alınırken bir sorun oluştu</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+        container.querySelector('.btn-retry')?.addEventListener('click', () => loadLibrary());
+        return;
+      }
       container.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><p class="empty-text">Bu sekmede henüz içerik yok</p><p class="empty-hint-text">Müzik dinledikçe veya listeler oluşturdukça burada görünecek</p></div>';
       return;
     }
