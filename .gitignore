@@ -4,6 +4,7 @@ harmonic-store-backup/
 temp/
 *.local
 desktop/dist/
+website/dist/
 desktop/release/
 desktop/*.log
 desktop/smoke-*
