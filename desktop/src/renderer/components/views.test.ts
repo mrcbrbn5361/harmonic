@@ -121,3 +121,23 @@ describe('getUpcomingContext', () => {
     expect(getUpcomingContext(q, '3')).toEqual([]);
   });
 });
+
+describe('parseLRC blank lines + no-ms fallback (B2 lines 42/49)', () => {
+  it('boş/beyaz-satırları atlar', () => {
+    const out = parseLRC('[00:01.00]a\n\n   \n[00:02.00]b\n');
+    expect(out.map((l) => l.text)).toEqual(['a', 'b']);
+  });
+
+  it('ms hanesi yoksa .0 sayar', () => {
+    const out = parseLRC('[00:05]no-ms');
+    expect(out).toHaveLength(1);
+    expect(out[0].time).toBeCloseTo(5, 5);
+    expect(out[0].text).toBe('no-ms');
+  });
+
+  it('tek haneli dakika + ms varyantı', () => {
+    const out = parseLRC('[0:01.500]x');
+    expect(out).toHaveLength(1);
+    expect(out[0].time).toBeCloseTo(1.5, 5);
+  });
+});

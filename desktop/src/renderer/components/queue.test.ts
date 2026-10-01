@@ -78,9 +78,19 @@ describe('getNextIndex', () => {
   it('boş kuyruk stop verir', () => {
     expect(getNextIndex(baseState({ queue: [], queueIndex: -1, currentSong: null }))).toEqual({ kind: 'stop' });
   });
+
+  it('sonda repeat-off + şarkı yoksa stop (line 117)', () => {
+    expect(getNextIndex(baseState({ queueIndex: 2, currentSong: null }))).toEqual({ kind: 'stop' });
+  });
 });
 
 describe('getPrevIndex', () => {
+  it('boş kuyruk noop verir (line 129)', () => {
+    expect(getPrevIndex(baseState({ queue: [], queueIndex: -1, currentSong: null }), 0)).toEqual({
+      kind: 'noop',
+    });
+  });
+
   it('3sn üstü restart verir', () => {
     expect(getPrevIndex(baseState(), 5)).toEqual({ kind: 'restart' });
   });
@@ -152,5 +162,48 @@ describe('fisherYatesShuffle', () => {
     const out = fisherYatesShuffle(input);
     expect(input).toEqual([0, 1, 2, 3, 4]);
     expect([...out].sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe('applySetContext edge branches (B1)', () => {
+  it('boş bağlam queueIndex=-1 verir (line 67)', () => {
+    const s = baseState({ queueIndex: 2 });
+    applySetContext(s, [], 'empty', 'home');
+    expect(s.queue).toEqual([]);
+    expect(s.queueIndex).toBe(-1);
+  });
+
+  it('currentSong yokken indexi alta/üste clamp eder (line 75)', () => {
+    const songs = [song('a'), song('b')];
+    const hi = baseState({ queueIndex: 99, currentSong: null });
+    applySetContext(hi, songs, 'ctx', 'home');
+    expect(hi.queueIndex).toBe(1);
+    const lo = baseState({ queueIndex: -5, currentSong: null });
+    applySetContext(lo, songs, 'ctx', 'home');
+    expect(lo.queueIndex).toBe(-1);
+    const mid = baseState({ queueIndex: 1, currentSong: null });
+    applySetContext(mid, songs, 'ctx', 'home');
+    expect(mid.queueIndex).toBe(1);
+  });
+
+  it('currentSong yeni bağlamda yoksa out-of-range index clamp edilir (line 73)', () => {
+    const ghost = song('ghost') as QueueItem;
+    const s = baseState({ queueIndex: 99, currentSong: ghost });
+    applySetContext(s, [song('a'), song('b')], 'ctx', 'home');
+    expect(s.queueIndex).toBe(1);
+  });
+});
+
+describe('getPrevIndex shuffle empty order (B1 line 134)', () => {
+  it('boş shuffleOrder üretir: ortadaysa geri gider, baştaysa restart', () => {
+    const spy = vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    try {
+      const s = baseState({ shuffle: true, shuffleOrder: [], queueIndex: 1 });
+      expect(getPrevIndex(s, 0)).toEqual({ kind: 'play', index: 0, shuffleOrder: [0, 1, 2] });
+      const head = baseState({ shuffle: true, shuffleOrder: [], queueIndex: 0 });
+      expect(getPrevIndex(head, 0)).toEqual({ kind: 'restart' });
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
