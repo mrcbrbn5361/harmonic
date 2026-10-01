@@ -15,6 +15,7 @@ export default defineConfig({
         'src/renderer/components/ui-feedback.ts',
         'src/renderer/components/song-row.ts',
         'src/renderer/components/transport.ts',
+        'src/renderer/components/panels.ts',
       ],
     },
   },

@@ -81,6 +81,20 @@ import {
   isRepeatActive,
   isRepeatOne,
 } from './transport';
+import {
+  resolvePanelToggle,
+  buildContextMenuHtml,
+  clampMenuPos,
+  copyLinkFor,
+  buildLyricsHtml,
+  parseSeekTime,
+  shouldSyncLyric,
+  hasLyricChanged,
+  isStaleLyricResponse,
+  buildQueueHtml,
+  queueIndexAfterUserPick,
+  resolveContextQueuePick,
+} from './panels';
 
   // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -1361,18 +1375,20 @@ function updatePlayIcon() {
     const backdrop = $('#panelBackdrop');
 
     $('#btnLyrics').addEventListener('click', () => {
-      if (state.panelOpen === 'lyrics') { closePanels(); return; }
+      const next = resolvePanelToggle(state.panelOpen, 'lyrics');
       closePanels();
-      state.panelOpen = 'lyrics';
+      if (!next) return;
+      state.panelOpen = next;
       show(lyricsPanel);
       show(backdrop);
       if (state.currentSong) loadLyrics();
     });
 
     $('#btnQueue').addEventListener('click', () => {
-      if (state.panelOpen === 'queue') { closePanels(); return; }
+      const next = resolvePanelToggle(state.panelOpen, 'queue');
       closePanels();
-      state.panelOpen = 'queue';
+      if (!next) return;
+      state.panelOpen = next;
       show(queuePanel);
       show(backdrop);
       renderQueue();
@@ -1390,20 +1406,12 @@ function updatePlayIcon() {
     closeContextMenu();
     const menu = document.createElement('div');
     menu.className = 'context-menu';
-    menu.innerHTML = `
-      <div class="ctx-item" data-action="play">Şimdi Çal</div>
-      <div class="ctx-item" data-action="playNext">Önce Çal</div>
-      <div class="ctx-item" data-action="addToQueue">Sıraya Ekle</div>
-      <div class="ctx-separator"></div>
-      <div class="ctx-item" data-action="addToLiked">${state.liked.has(song.id) ? 'Beğeniyi Kaldır' : 'Beğeniye Ekle'}</div>
-      <div class="ctx-item" data-action="addToPlaylist">Çalma Listesine Ekle...</div>
-      <div class="ctx-separator"></div>
-      <div class="ctx-item" data-action="copyLink">Bağlantıyı Kopyala</div>
-    `;
+    menu.innerHTML = buildContextMenuHtml(state.liked.has(song.id));
 
     // Pozisyon ayarla
-    menu.style.left = `${Math.min(x, window.innerWidth - 200)}px`;
-    menu.style.top = `${Math.min(y, window.innerHeight - 250)}px`;
+    const pos = clampMenuPos(x, y, window.innerWidth, window.innerHeight);
+    menu.style.left = `${pos.left}px`;
+    menu.style.top = `${pos.top}px`;
 
     document.body.appendChild(menu);
     activeContextMenu = menu;
@@ -1444,7 +1452,7 @@ function updatePlayIcon() {
           openAddToPlaylistModal(song);
           break;
         case 'copyLink':
-          navigator.clipboard?.writeText(`https://music.youtube.com/watch?v=${song.id}`);
+          navigator.clipboard?.writeText(copyLinkFor(song.id));
           showToast('Bağlantı kopyalandı', 'success');
           break;
       }
@@ -1548,7 +1556,7 @@ function updatePlayIcon() {
     body.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
     try {
       const lyrics = await ytLyrics(song.id, song.title, song.artist, song.duration);
-      if (state.currentSong?.id !== song.id) return; // Stale parça
+      if (isStaleLyricResponse(state.currentSong?.id, song.id)) return; // Stale parça
 
       (state as any).currentLyrics = lyrics || null;
       if ((api as any).botServer) {
@@ -1581,32 +1589,24 @@ function updatePlayIcon() {
     currentParsedLyrics = parsed;
     lastActiveLyricIdx = -1;
 
-    if (parsed.length > 0) {
-      body.innerHTML = parsed.map((item, idx) => `
-        <div class="lyric-line synced" data-time="${item.time}" data-idx="${idx}">
-          ${item.text ? escapeHtml(item.text) : '&nbsp;'}
-        </div>
-      `).join('');
+    body.innerHTML = buildLyricsHtml(lyrics, parsed);
 
+    if (parsed.length > 0) {
       body.querySelectorAll('.lyric-line.synced').forEach((el) => {
         el.addEventListener('click', () => {
-          const t = parseFloat((el as HTMLElement).dataset.time || '0');
-          if (!isNaN(t)) api.player.seek(t).catch(() => {});
+          const t = parseSeekTime((el as HTMLElement).dataset.time);
+          if (t !== null) api.player.seek(t).catch(() => {});
         });
       });
       syncActiveLyric(state.currentTime);
-    } else {
-      body.innerHTML = lyrics.split('\n').map((line: string) =>
-        `<div class="lyric-line">${line ? escapeHtml(line) : '&nbsp;'}</div>`
-      ).join('');
     }
   }
 
   function syncActiveLyric(curTime: number) {
-    if (!currentParsedLyrics.length || state.panelOpen !== 'lyrics') return;
+    if (!shouldSyncLyric(currentParsedLyrics.length, state.panelOpen)) return;
     const activeIdx = findActiveLyricIndex(currentParsedLyrics, curTime);
 
-    if (activeIdx !== lastActiveLyricIdx) {
+    if (hasLyricChanged(lastActiveLyricIdx, activeIdx)) {
       lastActiveLyricIdx = activeIdx;
       const body = $('#lyricsBody');
       body.querySelectorAll('.lyric-line.synced').forEach((el, idx) => {
@@ -1629,53 +1629,14 @@ function updatePlayIcon() {
 
   function renderQueue() {
     const body = $('#queueBody');
-    if (!state.userQueue.length && !state.contextQueue.length) {
-      body.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Sıra boş</p></div>';
-      return;
-    }
-
-    let html = '';
-
-    // Kullanıcının ekledikleri
-    if (state.userQueue.length) {
-      html += `<div style="margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <h4 style="font-size:13px;font-weight:600;color:var(--c-text-2)">Sıradaki Şarkılar</h4>
-          <button class="icon-btn" id="clearUserQueue" style="font-size:11px;padding:4px 8px;background:var(--c-bg-3);border-radius:4px;color:var(--c-text-2);border:none;cursor:pointer">Temizle</button>
-        </div>
-        <div class="song-list">${state.userQueue.map((s, i) => `
-          <div class="queue-item" data-type="user" data-idx="${i}">
-            <img class="song-thumb" src="${escapeHtml(s.thumbnail)}" alt="" style="width:36px;height:36px" onerror="this.style.display='none'">
-            <div class="song-meta">
-              <div class="song-title">${escapeHtml(s.title)}</div>
-              <div class="song-artist">${escapeHtml(s.artist)}</div>
-            </div>
-            <span class="song-dur">${formatTime(s.duration)}</span>
-          </div>`).join('')}</div>
-      </div>`;
-    }
-
-    // Bağlam şarkıları (çalma listesi/albumden gelen)
-    if (state.contextQueue.length) {
-      const contextLabel = state.contextName || 'Bağlam';
-      const upcomingCtx = getUpcomingContext(state.contextQueue, state.currentSong?.id);
-      if (upcomingCtx.length) {
-        html += `<div>
-          <h4 style="font-size:13px;font-weight:600;color:var(--c-text-2);margin-bottom:8px">${escapeHtml(contextLabel)}</h4>
-          <div class="song-list">${upcomingCtx.map((s, i) => `
-            <div class="queue-item" data-type="context" data-idx="${i}">
-              <img class="song-thumb" src="${escapeHtml(s.thumbnail)}" alt="" style="width:36px;height:36px" onerror="this.style.display='none'">
-              <div class="song-meta">
-                <div class="song-title">${escapeHtml(s.title)}</div>
-                <div class="song-artist">${escapeHtml(s.artist)}</div>
-              </div>
-              <span class="song-dur">${formatTime(s.duration)}</span>
-            </div>`).join('')}</div>
-        </div>`;
-      }
-    }
-
-    body.innerHTML = html || '<div class="empty-state"><p class="empty-hint-text">Sıra boş</p></div>';
+    const contextLabel = state.contextName || 'Bağlam';
+    const upcomingCtx = getUpcomingContext(state.contextQueue, state.currentSong?.id);
+    body.innerHTML = buildQueueHtml(
+      state.userQueue,
+      state.contextQueue.length,
+      upcomingCtx,
+      contextLabel,
+    );
 
     // Clear user queue
     const clearBtn = body.querySelector('#clearUserQueue');
@@ -1697,13 +1658,15 @@ function updatePlayIcon() {
             // Kullanıcı queue'sundan seçildi → tüket, sonraki kaldığı yerden devam etsin
             state.userQueue.splice(idx, 1);
             state.queue = rebuildMergedQueue();
-            state.queueIndex = idx - 1;
+            state.queueIndex = queueIndexAfterUserPick(idx);
             playSong(song);
           }
         } else if (type === 'context') {
           // idx dilimlenmiş upcomingCtx'e ait — tam dizinden değil dilimden oku
-          const upcomingCtx = getUpcomingContext(state.contextQueue, state.currentSong?.id);
-          const song = upcomingCtx[idx];
+          const song = resolveContextQueuePick(
+            getUpcomingContext(state.contextQueue, state.currentSong?.id),
+            idx,
+          );
           if (song) {
             state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
             playSong(song);
