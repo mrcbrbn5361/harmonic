@@ -143,6 +143,62 @@ import {
   resolveLocalLiked,
   buildLikedHtml,
 } from './content';
+import {
+  CHROME_LOGIN_TOAST,
+  isLoginOpenFailure,
+  resolveLoginErrorText,
+  hasExternalChrome,
+  resolveChromePromptTitle,
+  resolveChromeImportButtonLabel,
+  resolveChromeImportInitialStatus,
+  buildImportSuccessText,
+  buildImportFailureText,
+  buildImportExceptionText,
+  normalizeUserName,
+  MEDIA_SEEK_STEP,
+  shouldHandleMediaSeek,
+  buildMediaArtwork,
+  PLAYLISTS_EMPTY_HTML,
+  LOCAL_PLAYLIST_EMPTY_BODY,
+  buildLocalPlaylistEntry,
+  shouldCreatePlaylist,
+  findLocalPlaylist,
+  removeLocalPlaylist,
+  buildPlaylistsNavHtml,
+  buildLocalPlaylistHeaderHtml,
+  buildPlaylistDeleteConfirm,
+  shouldShowPlaylistPlay,
+  normalizeTheme,
+  normalizeQuality,
+  normalizeAutoPlay,
+  resolveEffectiveTheme,
+  formatAppVersion,
+  shouldShowAppVersion,
+  resolveUpdateCheckDisplay,
+  resolveUpdateCheckError,
+  resolveGoogleOAuthStatus,
+  buildAuthClientsHtml,
+  isValidAuthClientInput,
+  DISCORD_POLL_MS,
+  DISCORD_UNKNOWN_TEXT,
+  DISCORD_OFF_TEXT,
+  resolveDiscordRpcStatus,
+  resolveDiscordAccountLabel,
+  shouldShowDiscordAvatar,
+  resolveBotServerStatus,
+  normalizeBotServerEnabled,
+  resolveBotAuthToast,
+  shouldAbortBotAuthToggle,
+  extractRegenToken,
+  normalizeCustomAppId,
+  INIT_DEFAULT_PAGE,
+  normalizeSavedVolume,
+  shouldRestoreVolume,
+  shouldBuildShuffleOrder,
+  shouldRestoreRepeat,
+  REPEAT_ONE_BUTTON_HTML,
+  collectRegistrySongs,
+} from './system';
 
   // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -187,8 +243,8 @@ import {
 
       if (loggedIn) {
         state.user = await api.auth.getMusicUser();
-        if (state.user && !sanitizeName(state.user.name)) {
-          state.user.name = '';
+        if (state.user) {
+          state.user.name = normalizeUserName(state.user.name, sanitizeName(state.user.name));
         }
       } else {
         state.user = null;
@@ -248,10 +304,10 @@ import {
     const startWelcomeBtn = $('#btnStartWelcome');
 
     async function doLoginMusic() {
-      showToast('Chrome açılıyor... YouTube Music\'e giriş yapıp buraya dönün.', 'info');
+      showToast(CHROME_LOGIN_TOAST, 'info');
       const opened = await api.auth.loginMusic();
-      if (!opened?.opened) {
-        showToast(`Chrome açılamadı: ${opened?.error || 'bilinmeyen hata'}`, 'error');
+      if (isLoginOpenFailure(opened)) {
+        showToast(resolveLoginErrorText(opened), 'error');
         return;
       }
       showChromeImportPrompt(opened);
@@ -276,23 +332,23 @@ import {
   function showChromeImportPrompt(opened: any) {
     const existing = document.getElementById('chromeImportModal');
     if (existing) existing.remove();
-    const hasExt = !!opened?.externalFound;
+    const hasExt = hasExternalChrome(opened);
     const modal = document.createElement('div');
     modal.id = 'chromeImportModal';
     modal.className = 'modal-overlay visible';
     modal.innerHTML = `
       <div class="modal" style="max-width:520px">
         <div class="modal-header">
-          <h3>${hasExt? 'Açık YouTube Music Hesabını Seç' : 'Harmonic Giriş Penceresi Açıldı'}</h3>
+          <h3>${resolveChromePromptTitle(hasExt)}</h3>
           <button class="icon-btn" id="closeChromeImport"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
         <div class="modal-body" style="padding:16px 20px">
           ${hasExt? `<div style="padding:10px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);margin-bottom:10px"><p style="margin:0;color:var(--c-text-1)"><strong>Zaten YouTube Music açık</strong>. Lütfen o tarayıcıda <strong>YouTube Music → sağ üst profil → Hesap değiştir</strong> ile istediğin hesaba geç, sonra buraya dönüp <strong>Girişi Aktar</strong>'a bas. Ayrı şifre ekranı açılmayacak.</p></div><p style="margin:0 0 8px;color:var(--c-text-2);font-size:12px">Not: İlk seferinde Harmonic giriş penceresi yerine mevcut Chrome'un kullanılacak, bu yüzden yeni şifre sormaz.</p>` : `<p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Ayrı bir <strong>YouTube Music giriş penceresi</strong> açıldı. Orada hesabınla giriş yap, ana sayfa yüklenince <strong>Girişi Aktar</strong>'a bas.</p>`}
-          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">${hasExt?'Harici Chrome hesabı bekleniyor...':'Pencere açık, giriş bekleniyor...'}</div>
+          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">${resolveChromeImportInitialStatus(hasExt)}</div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" id="cancelChromeImport">İptal</button>
-          <button class="btn btn-primary" id="doChromeImport">${hasExt?'Seçili Hesapla Giriş Yap':'Girişi Aktar'}</button>
+          <button class="btn btn-primary" id="doChromeImport">${resolveChromeImportButtonLabel(hasExt)}</button>
         </div>
       </div>
     `;
@@ -310,12 +366,12 @@ import {
         const r = await api.auth.importFromChrome();
         if (r?.success) {
           state.isLoggedIn = true; state.user = await api.auth.getMusicUser(); updateAuthUI();
-          status.textContent = `${state.user?.name || 'Giriş'} olarak giriş yapıldı (${r.cookies} cookie)`;
+          status.textContent = buildImportSuccessText(state.user?.name, r.cookies);
           status.style.color = 'var(--c-success)';
           await checkAuthState(); updateAuthUI(); loadHome();
           setTimeout(close, 1500);
-        } else { status.textContent = `Hata: ${r?.error || 'Pencerede giriş yapılmamış'}`; status.style.color = 'var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
-      } catch(e:any){ status.textContent=`Hata: ${e?.message||String(e)}`; status.style.color='var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
+        } else { status.textContent = buildImportFailureText(r?.error); status.style.color = 'var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
+      } catch(e:any){ status.textContent=buildImportExceptionText(e); status.style.color='var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
     });
   }
 
@@ -2001,10 +2057,10 @@ function updatePlayIcon() {
     navigator.mediaSession.setActionHandler('previoustrack', () => prevSong());
     navigator.mediaSession.setActionHandler('nexttrack', () => nextSong());
     navigator.mediaSession.setActionHandler('seekbackward', () => {
-      if (state.duration) api.player.seek(clampSeekTarget(state.currentTime, -10, state.duration)).catch(() => {});
+      if (shouldHandleMediaSeek(state.duration)) api.player.seek(clampSeekTarget(state.currentTime, -MEDIA_SEEK_STEP, state.duration)).catch(() => {});
     });
     navigator.mediaSession.setActionHandler('seekforward', () => {
-      if (state.duration) api.player.seek(clampSeekTarget(state.currentTime, 10, state.duration)).catch(() => {});
+      if (shouldHandleMediaSeek(state.duration)) api.player.seek(clampSeekTarget(state.currentTime, MEDIA_SEEK_STEP, state.duration)).catch(() => {});
     });
   }
 
@@ -2013,7 +2069,7 @@ function updatePlayIcon() {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: state.currentSong.title,
       artist: state.currentSong.artist,
-      artwork: state.currentSong.thumbnail ? [{ src: state.currentSong.thumbnail, sizes: '480x480', type: 'image/jpeg' }] : []
+      artwork: buildMediaArtwork(state.currentSong.thumbnail)
     });
   }
 
@@ -2145,9 +2201,9 @@ function updatePlayIcon() {
 
     $('#createPlaylist').addEventListener('click', async () => {
       const name = input.value.trim();
-      if (!name) return;
+      if (!shouldCreatePlaylist(name)) return;
       const playlists = await api.store.get('playlists') || [];
-      playlists.push({ id: `pl_${Date.now()}`, name, songs: [], createdAt: Date.now() });
+      playlists.push(buildLocalPlaylistEntry(name, Date.now()));
       await api.store.set('playlists', playlists);
       modal.classList.remove('visible');
       renderPlaylists();
@@ -2160,15 +2216,10 @@ function updatePlayIcon() {
     const container = $('#playlistsContainer');
     const playlists = await api.store.get('playlists') || [];
     if (!playlists.length) {
-      container.innerHTML = '<div class="empty-hint">Henüz liste yok</div>';
+      container.innerHTML = PLAYLISTS_EMPTY_HTML;
       return;
     }
-    container.innerHTML = playlists.map((pl: any) => `
-      <a class="nav-link" href="#" data-pl="${escapeHtml(pl.id)}">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        <span>${escapeHtml(pl.name)}</span>
-      </a>
-    `).join('');
+    container.innerHTML = buildPlaylistsNavHtml(playlists);
 
     container.querySelectorAll('.nav-link[data-pl]').forEach((link) => {
       link.addEventListener('click', (e) => {
@@ -2181,7 +2232,7 @@ function updatePlayIcon() {
 
   async function openLocalPlaylist(plId: string) {
     const playlists = await api.store.get('playlists') || [];
-    const pl = playlists.find((p: any) => p.id === plId);
+    const pl = findLocalPlaylist(playlists, plId);
     if (!pl) return;
 
     state.page = 'library';
@@ -2199,38 +2250,19 @@ function updatePlayIcon() {
     const container = $('#libraryContent');
     const songs: Song[] = pl.songs || [];
 
-    let html = `
-      <div style="margin-bottom:24px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">
-          <div>
-            <h2 style="font-size:22px;font-weight:700;color:var(--c-text-0);margin:0 0 4px">${escapeHtml(pl.name)}</h2>
-            <p style="margin:0;color:var(--c-text-2);font-size:13px">${songs.length} şarkı • Özel Çalma Listesi</p>
-          </div>
-          <div style="display:flex;gap:8px">
-            ${songs.length ? `<button class="btn btn-primary" id="btnPlayPlaylist" style="display:flex;align-items:center;gap:6px">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-              Çal
-            </button>` : ''}
-            <button class="btn btn-ghost" id="btnDeletePlaylist" style="color:var(--c-error)">Listeyi Sil</button>
-          </div>
-        </div>
-    `;
+    let html = buildLocalPlaylistHeaderHtml(pl.name, songs.length);
 
-    if (songs.length) {
+    if (shouldShowPlaylistPlay(songs.length)) {
       html += `<div class="song-list">${songs.map((s, i) => songRow(s, i + 1)).join('')}</div></div>`;
     } else {
-      html += `
-        <div class="empty-state">
-          <p class="empty-text">Bu listede henüz şarkı yok</p>
-          <p class="empty-hint-text">Şarkılara sağ tıklayıp "Çalma Listesine Ekle..." seçeneğiyle ekleyebilirsiniz.</p>
-        </div></div>`;
+      html += `${LOCAL_PLAYLIST_EMPTY_BODY}</div>`;
     }
 
     container.innerHTML = html;
     attachSongEvents(container);
 
     container.querySelector('#btnPlayPlaylist')?.addEventListener('click', () => {
-      if (songs.length) {
+      if (shouldShowPlaylistPlay(songs.length)) {
         setContext(songs, pl.name, 'playlist');
         state.queueIndex = 0;
         playSong(songs[0]);
@@ -2238,9 +2270,10 @@ function updatePlayIcon() {
     });
 
     container.querySelector('#btnDeletePlaylist')?.addEventListener('click', async () => {
-      const ok = await confirmDialog('Listeyi Sil', `"${pl.name}" listesini silmek istediğinize emin misiniz?`);
+      const confirm = buildPlaylistDeleteConfirm(pl.name);
+      const ok = await confirmDialog(confirm.title, confirm.message);
       if (ok) {
-        const updated = playlists.filter((p: any) => p.id !== plId);
+        const updated = removeLocalPlaylist(playlists, plId);
         await api.store.set('playlists', updated);
         showToast(`"${pl.name}" listesi silindi`, 'info');
         renderPlaylists();
@@ -2256,11 +2289,11 @@ function updatePlayIcon() {
     const autoPlay = $('#settingAutoPlay') as HTMLInputElement;
 
     api.store.get('theme').then((t: string) => {
-      themeSelect.value = t || 'dark';
-      applyTheme(t || 'dark');
+      themeSelect.value = normalizeTheme(t);
+      applyTheme(normalizeTheme(t));
     });
-    api.store.get('quality').then((q: string) => { qualitySelect.value = q || 'high'; });
-    api.store.get('autoPlay').then((v: boolean) => { autoPlay.checked = v !== false; });
+    api.store.get('quality').then((q: string) => { qualitySelect.value = normalizeQuality(q); });
+    api.store.get('autoPlay').then((v: boolean) => { autoPlay.checked = normalizeAutoPlay(v); });
 
     themeSelect.addEventListener('change', () => {
       api.store.set('theme', themeSelect.value);
@@ -2272,7 +2305,7 @@ function updatePlayIcon() {
     // Sürüm rozeti (paket sürümünden — sabit string yok)
     (api as any).app?.getVersion?.().then((v: string) => {
       const el = $('#appVersion');
-      if (el && v) el.textContent = `v${v}`;
+      if (el && shouldShowAppVersion(v)) el.textContent = formatAppVersion(v);
     }).catch(() => {});
 
     // Güncelleme denetimi (M-05)
@@ -2283,18 +2316,11 @@ function updatePlayIcon() {
       if (btnUpdates) btnUpdates.disabled = true;
       try {
         const r: any = await (api as any).auto?.checkForUpdates?.();
-        if (!r) {
-          if (updateStatus) updateStatus.textContent = 'Denetim desteklenmiyor';
-        } else if (r.status === 'available') {
-          if (updateStatus) updateStatus.textContent = `Yeni sürüm mevcut: v${r.version}`;
-          showToast(`Yeni sürüm mevcut: v${r.version}`, 'info');
-        } else if (r.status === 'up-to-date') {
-          if (updateStatus) updateStatus.textContent = 'Uygulama güncel';
-        } else {
-          if (updateStatus) updateStatus.textContent = `Denetim başarısız: ${r.message || 'bilinmeyen hata'}`;
-        }
+        const display = resolveUpdateCheckDisplay(r);
+        if (updateStatus) updateStatus.textContent = display.statusText;
+        if (display.toastText) showToast(display.toastText, display.toastKind ?? 'info');
       } catch (e: any) {
-        if (updateStatus) updateStatus.textContent = 'Denetim başarısız';
+        if (updateStatus) updateStatus.textContent = resolveUpdateCheckError().statusText;
       } finally {
         if (btnUpdates) btnUpdates.disabled = false;
       }
@@ -2307,9 +2333,9 @@ function updatePlayIcon() {
   function applyTheme(theme: string) {
     if (theme === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', resolveEffectiveTheme(theme, prefersDark));
     } else {
-      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.setAttribute('data-theme', resolveEffectiveTheme(theme, false));
     }
   }
 
@@ -2318,7 +2344,7 @@ function updatePlayIcon() {
     try {
       const googleConfig = await api.auth.getGoogleConfig();
       const el = document.getElementById('googleOAuthStatus');
-      if (el) el.textContent = (googleConfig.clientId ? '✓ Yapılandırıldı' : 'Yapılandırılamadı');
+      if (el) el.textContent = resolveGoogleOAuthStatus(googleConfig.clientId);
     } catch {}
   }
 
@@ -2327,8 +2353,8 @@ function updatePlayIcon() {
     if(vr){ (api as any).volumeRatio.isEnabled().then((v:boolean)=>vr.checked=!!v); vr.addEventListener('change',()=> (api as any).volumeRatio.setEnabled(vr.checked)); }
     if(ly){ (api as any).lyrics.isEnabled().then((v:boolean)=>ly.checked=v!==false); ly.addEventListener('change',()=> (api as any).lyrics.setEnabled(ly.checked)); }
     const listEl=document.getElementById('authClientsList'); const aId=document.getElementById('authAppId') as HTMLInputElement; const aName=document.getElementById('authAppName') as HTMLInputElement; const btn=document.getElementById('authCreateBtn');
-    async function refresh(){ if(!listEl) return; const cs:any[]=await (api as any).authClients.list(); listEl.innerHTML= cs.length? cs.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--c-border)"><span>${escapeHtml(c.appName)} (${escapeHtml(c.appId)})</span><button data-revoke="${escapeHtml(c.appId)}" style="color:var(--c-error)">Sil</button></div>`).join('') : '<em>Henüz bağlı uygulama yok</em>'; listEl.querySelectorAll('[data-revoke]').forEach(b=> b.addEventListener('click', async()=>{ await (api as any).authClients.revoke((b as HTMLElement).dataset.revoke!); refresh(); })); }
-    refresh(); btn?.addEventListener('click', async()=>{ if(!aId.value||!aName.value) return showToast('appId ve ad gerekli','warning'); await (api as any).authClients.create({appId:aId.value, appName:aName.value}); aId.value=''; aName.value=''; refresh(); showToast('İstemci eklendi','success'); });
+    async function refresh(){ if(!listEl) return; const cs:any[]=await (api as any).authClients.list(); listEl.innerHTML= buildAuthClientsHtml(cs); listEl.querySelectorAll('[data-revoke]').forEach(b=> b.addEventListener('click', async()=>{ await (api as any).authClients.revoke((b as HTMLElement).dataset.revoke!); refresh(); })); }
+    refresh(); btn?.addEventListener('click', async()=>{ if(!isValidAuthClientInput(aId.value, aName.value)) return showToast('appId ve ad gerekli','warning'); await (api as any).authClients.create({appId:aId.value, appName:aName.value}); aId.value=''; aName.value=''; refresh(); showToast('İstemci eklendi','success'); });
   }
   function setupDiscord() {
     const enabledToggle = $('#discordEnabled') as HTMLInputElement;
@@ -2340,7 +2366,7 @@ function updatePlayIcon() {
     api.store.get('discordEnabled').then((v: any) => { if (v !== undefined) enabledToggle.checked = !!v; });
     api.store.get('discordButtons').then((v: any) => { if (v !== undefined) buttonsToggle.checked = !!v; });
     api.store.get('discordThumbnails').then((v: any) => { if (v !== undefined) thumbsToggle.checked = !!v; });
-    enabledToggle.addEventListener('change', () => { api.store.set('discordEnabled', enabledToggle.checked); if (!enabledToggle.checked) { api.discord.clearActivity().catch(()=>{}); statusEl.textContent = 'Kapalı'; } else { refreshDiscordStatus(); } });
+    enabledToggle.addEventListener('change', () => { api.store.set('discordEnabled', enabledToggle.checked); if (!enabledToggle.checked) { api.discord.clearActivity().catch(()=>{}); statusEl.textContent = DISCORD_OFF_TEXT; } else { refreshDiscordStatus(); } });
     buttonsToggle.addEventListener('change', () => api.store.set('discordButtons', buttonsToggle.checked));
     thumbsToggle.addEventListener('change', () => api.store.set('discordThumbnails', thumbsToggle.checked));
 
@@ -2348,11 +2374,11 @@ function updatePlayIcon() {
     async function refreshDiscordStatus() {
       try {
         const ok = await api.discord.isReady();
-        statusEl.textContent = ok ? '✓ Bağlı (RPC)' : 'Discord uygulaması bekleniyor...';
-      } catch { statusEl.textContent = '—'; }
+        statusEl.textContent = resolveDiscordRpcStatus(!!ok);
+      } catch { statusEl.textContent = DISCORD_UNKNOWN_TEXT; }
     }
     refreshDiscordStatus();
-    setInterval(() => { if (enabledToggle.checked) refreshDiscordStatus(); }, 15000);
+    setInterval(() => { if (enabledToggle.checked) refreshDiscordStatus(); }, DISCORD_POLL_MS);
 
     // Discord hesabı (resmi OAuth2 — token yapıştırma yok)
     const accName = $('#discordAccountName');
@@ -2363,8 +2389,8 @@ function updatePlayIcon() {
       try {
         const u: any = await (api as any).discordAuth.getUser();
         if (u) {
-          if (accName) accName.textContent = u.name || u.username || 'Bağlı';
-          if (u.picture) { accAvatar.src = u.picture; accAvatar.style.display = 'block'; }
+          if (accName) accName.textContent = resolveDiscordAccountLabel(u);
+          if (shouldShowDiscordAvatar(u)) { accAvatar.src = u.picture; accAvatar.style.display = 'block'; }
           else accAvatar.style.display = 'none';
           loginBtn.style.display = 'none';
           logoutBtn.style.display = 'flex';
@@ -2397,15 +2423,15 @@ function updatePlayIcon() {
     const botServerStatus = $('#botServerStatus');
     if (botServerToggle && (api as any).botServer) {
       api.store.get('botServerEnabled').then((v: any) => {
-        botServerToggle.checked = v === true;
+        botServerToggle.checked = normalizeBotServerEnabled(v);
         if (botServerStatus) {
-          botServerStatus.textContent = v === true ? '✓ Aktif (Port 9863)' : 'Kapalı';
+          botServerStatus.textContent = resolveBotServerStatus(normalizeBotServerEnabled(v));
         }
       });
       botServerToggle.addEventListener('change', async () => {
         const active = await (api as any).botServer.toggle(botServerToggle.checked);
         if (botServerStatus) {
-          botServerStatus.textContent = active ? '✓ Aktif (Port 9863)' : 'Kapalı';
+          botServerStatus.textContent = resolveBotServerStatus(!!active);
         }
       });
     }
@@ -2427,16 +2453,19 @@ function updatePlayIcon() {
         if (a) {
           botAuthToggle.checked = !!a.enabled;
           if (botTokenInput) botTokenInput.value = a.token || '';
-          if (desired !== !!a.enabled) {
+          if (shouldAbortBotAuthToggle(desired, !!a.enabled)) {
             showToast('İşlem iptal edildi.', 'info');
             return;
           }
         }
-        showToast(a?.enabled ? 'Token koruması açıldı.' : 'Token koruması kapatıldı (açık mod).', a?.enabled ? 'info' : 'warning');
+        {
+          const toast = resolveBotAuthToast(!!a?.enabled);
+          showToast(toast.text, toast.kind);
+        }
       });
       btnRegen?.addEventListener('click', async () => {
         const res = await (api as any).botServer.regenerateToken().catch(() => null);
-        const t = res?.token || (typeof res === 'string' ? res : '');
+        const t = extractRegenToken(res);
         if (t && botTokenInput) {
           botTokenInput.value = t;
         }
@@ -2462,7 +2491,7 @@ function updatePlayIcon() {
         if (v) customAppIdInput.value = v;
       });
       btnSaveAppId.addEventListener('click', async () => {
-        const val = customAppIdInput.value.trim();
+        const val = normalizeCustomAppId(customAppIdInput.value);
         await api.store.set('customDiscordAppId', val);
         if (api.discord && typeof api.discord.setAppId === 'function') {
           await api.discord.setAppId(val);
@@ -2509,15 +2538,15 @@ function updatePlayIcon() {
     savedLikes.forEach((id) => state.liked.add(id));
     const savedDetails: Record<string, Song> = await api.store.get('likedSongsDetails') || {};
     state.likedSongsMap = savedDetails;
-    Object.values(savedDetails).forEach((s) => {
-      if (s?.id) songRegistry.set(s.id, s);
+    collectRegistrySongs(savedDetails).forEach((s) => {
+      songRegistry.set(s.id, s);
     });
 
     // Load saved volume
     const savedVol = await api.store.get('volume');
-    if (savedVol != null) {
+    if (shouldRestoreVolume(savedVol)) {
       // Eski format: 0-1 arası (0.8) → yeni format: 0-100 (80)
-      state.volume = savedVol <= 1 ? Math.round(savedVol * 100) : savedVol;
+      state.volume = normalizeSavedVolume(savedVol);
       const slider = $('#volumeSlider') as HTMLInputElement;
       if (slider) slider.value = String(state.volume);
       updateVolumeSliderBg();
@@ -2529,21 +2558,21 @@ function updatePlayIcon() {
     if (savedShuffle != null) {
       state.shuffle = !!savedShuffle;
       $('#btnShuffle').classList.toggle('active', state.shuffle);
-      if (state.shuffle && state.queue.length) {
+      if (shouldBuildShuffleOrder(state.shuffle, state.queue.length)) {
         state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
       }
     }
     const savedRepeat = await api.store.get('repeat');
-    if (savedRepeat) {
+    if (shouldRestoreRepeat(savedRepeat)) {
       state.repeat = savedRepeat as any;
       const btn = $('#btnRepeat');
       btn.classList.toggle('active', state.repeat !== 'off');
       if (state.repeat === 'one') {
-        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="14" text-anchor="middle" font-size="7" fill="currentColor" stroke="none" font-weight="bold">1</text></svg>';
+        btn.innerHTML = REPEAT_ONE_BUTTON_HTML;
       }
     }
 
-    navigateTo('home');
+    navigateTo(INIT_DEFAULT_PAGE);
   }
 
   document.addEventListener('DOMContentLoaded', init);
