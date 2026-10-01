@@ -99,8 +99,11 @@ export const state: AppState = {
 export const songRegistry = new Map<string, Song>();
 
 // State yardımcı mutasyon fonksiyonları
+// Tek kaynak: birleştirme mantığı queue.ts buildMergedQueue'dadır.
+import { buildMergedQueue } from './queue';
+
 export function rebuildMergedQueue(): QueueItem[] {
-  return [...state.userQueue, ...state.contextQueue];
+  return buildMergedQueue(state.userQueue, state.contextQueue);
 }
 
 export function resetQueue(): void {

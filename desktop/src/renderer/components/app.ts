@@ -12,6 +12,15 @@ import {
   songRegistry,
   rebuildMergedQueue
 } from './state';
+import {
+  fisherYatesShuffle as fisherYatesShuffleImpl,
+  applyAddToQueue,
+  applyPlayNext,
+  applyClearUserQueue,
+  applySetContext,
+  getNextIndex,
+  getPrevIndex
+} from './queue';
 
   // ── API Bridge ─────────────────────────────
   const api = (window as any).api;
@@ -119,48 +128,26 @@ import {
   }
 
   function FisherYatesShuffle(arr: number[]): number[] {
-    const a = [...arr];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
+    return fisherYatesShuffleImpl(arr);
   }
 
   function addToQueue(song: Song): void {
-    state.userQueue.push(song as QueueItem);
-    state.queue = rebuildMergedQueue();
+    applyAddToQueue(state, song);
     showToast(`Sıraya eklendi: ${song.title}`, 'success');
   }
 
   function playNext(song: Song): void {
-    state.userQueue.unshift(song as QueueItem);
-    state.queue = rebuildMergedQueue();
+    applyPlayNext(state, song);
     showToast(`Önce çalınacak: ${song.title}`, 'success');
   }
 
   function clearUserQueue(): void {
-    state.userQueue = [];
-    state.queue = rebuildMergedQueue();
+    applyClearUserQueue(state);
     showToast('Sıra temizlendi', 'info');
   }
 
   function setContext(songs: Song[], name: string, type: QueueContext['type']): void {
-    state.contextQueue = songs as QueueItem[];
-    state.contextName = name;
-    state.contextType = type;
-    state.queue = rebuildMergedQueue();
-    // Yeni bağlam: eski shuffle sırası geçersiz (Spotify: yeni bağlamda sıra baştan)
-    state.shuffleOrder = [];
-    // queueIndex'i yeni kuyruğa sabitle (çalan şarkı varsa onun konumu)
-    if (state.queue.length === 0) {
-      state.queueIndex = -1;
-    } else if (state.currentSong) {
-      const idx = state.queue.findIndex((s) => s.id === state.currentSong!.id);
-      state.queueIndex = idx !== -1 ? idx : Math.min(Math.max(state.queueIndex, 0), state.queue.length - 1);
-    } else {
-      state.queueIndex = Math.min(Math.max(state.queueIndex, -1), state.queue.length - 1);
-    }
+    applySetContext(state, songs, name, type);
     const ctxEl = $('#playerContext');
     if (ctxEl) ctxEl.textContent = name || '';
   }
@@ -1339,61 +1326,29 @@ import {
   function nextSong() {
     if (!state.queue.length) return;
 
-    // Repeat: one → mevcut şarkıyı başa sar
-    if (state.repeat === 'one') {
+    const decision = getNextIndex(state);
+    if (decision.kind === 'repeat-current') {
       playSong(state.queue[state.queueIndex >= 0 ? state.queueIndex : 0]);
       return;
     }
-
-    if (state.shuffle) {
-      // Fisher-Yates shuffle order kullan
-      if (state.shuffleOrder.length === 0) {
-        state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
+    if (decision.kind === 'play') {
+      if (decision.shuffleOrder) state.shuffleOrder = decision.shuffleOrder;
+      state.queueIndex = decision.index;
+      playSong(state.queue[state.queueIndex]);
+      // Kuyruk sonuna yaklaşıldıysa (kalan <= 2) arka planda radyo çekerek kuyruğu uzat
+      if (!state.shuffle && state.queueIndex >= state.queue.length - 2 && state.currentSong) {
+        preloadRadioQueue(state.currentSong);
       }
-      const currentShufflePos = state.shuffleOrder.indexOf(state.queueIndex);
-      const nextShufflePos = currentShufflePos + 1;
-      if (nextShufflePos < state.shuffleOrder.length) {
-        state.queueIndex = state.shuffleOrder[nextShufflePos];
-        playSong(state.queue[state.queueIndex]);
-      } else if (state.repeat === 'all') {
-        state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
-        state.queueIndex = state.shuffleOrder[0];
-        playSong(state.queue[state.queueIndex]);
-      } else {
-        // Sıra bitti, auto-play dene: mevcut parçanın radyosunu çekip devam et
-        if (state.currentSong) {
-          fetchRadioAndContinue(state.currentSong);
-          return;
-        }
-        state.playing = false;
-        updatePlayIcon();
-        return;
-      }
-    } else {
-      const nextIdx = state.queueIndex + 1;
-      if (nextIdx < state.queue.length) {
-        state.queueIndex = nextIdx;
-        playSong(state.queue[state.queueIndex]);
-        // Kuyruk sonuna yaklaşıldıysa (kalan <= 2) arka planda radyo çekerek kuyruğu uzat
-        if (state.queueIndex >= state.queue.length - 2 && state.currentSong) {
-          preloadRadioQueue(state.currentSong);
-        }
-        return;
-      } else if (state.repeat === 'all') {
-        state.queueIndex = 0;
-        playSong(state.queue[0]);
-        return;
-      } else {
-        // Sıra bitti: mevcut parçanın radyosunu çekip kesintisiz devam et
-        if (state.currentSong) {
-          fetchRadioAndContinue(state.currentSong);
-          return;
-        }
-        state.playing = false;
-        updatePlayIcon();
-        return;
-      }
+      return;
     }
+    // decision.kind === 'radio' | 'stop'
+    if (decision.kind === 'radio' && state.currentSong) {
+      fetchRadioAndContinue(state.currentSong);
+      return;
+    }
+    state.playing = false;
+    updatePlayIcon();
+    return;
   }
 
   async function fetchRadioAndContinue(song: Song) {
@@ -1444,29 +1399,14 @@ import {
 
   function prevSong() {
     if (!state.queue.length) return;
-    if (state.currentTime > 3) {
+    const decision = getPrevIndex(state, state.currentTime);
+    if (decision.kind === 'noop') return;
+    if (decision.kind === 'restart') {
       api.player.seek(0).catch(() => {});
       return;
     }
-    if (state.shuffle) {
-      if (state.shuffleOrder.length === 0) {
-        state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
-      }
-      const currentShufflePos = state.shuffleOrder.indexOf(state.queueIndex);
-      if (currentShufflePos > 0) {
-        state.queueIndex = state.shuffleOrder[currentShufflePos - 1];
-        playSong(state.queue[state.queueIndex]);
-      } else {
-        api.player.seek(0).catch(() => {});
-      }
-      return;
-    }
-    // Normal sıralı çalma: ilk şarkıda önceki → baştan başlat
-    if (state.queueIndex <= 0) {
-      api.player.seek(0).catch(() => {});
-      return;
-    }
-    state.queueIndex = state.queueIndex - 1;
+    if (decision.shuffleOrder) state.shuffleOrder = decision.shuffleOrder;
+    state.queueIndex = decision.index;
     playSong(state.queue[state.queueIndex]);
   }
 

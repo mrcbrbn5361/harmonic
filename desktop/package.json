@@ -18,6 +18,8 @@
     "build:installer": "npm run build && electron-builder --win nsis",
     "build:win": "npm run build && electron-builder --win",
     "build:portable": "npm run build && electron-builder --win portable",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.main.json && tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -30,12 +32,14 @@
     "@types/chrome-remote-interface": "^0.34.0",
     "@types/node": "^20.11.0",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^2.1.9",
     "7zip-bin": "^5.2.0",
     "concurrently": "^8.2.2",
     "electron": "28.3.3",
     "electron-builder": "^24.9.1",
     "typescript": "^5.3.3",
-    "vite": "^5.0.12"
+    "vite": "^5.0.12",
+    "vitest": "^2.1.8"
   },
   "build": {
     "appId": "com.harmonic.desktop",

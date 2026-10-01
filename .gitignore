@@ -9,6 +9,7 @@ desktop/release/
 desktop/*.log
 desktop/smoke-*
 desktop/test-*
+desktop/coverage/
 
 # Ignore git credentials
 .gitcredentials

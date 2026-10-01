@@ -24,5 +24,8 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Run unit tests
+        run: npm run test --workspace=desktop
+
       - name: Build all workspaces
         run: npm run build:all
