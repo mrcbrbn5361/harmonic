@@ -29,59 +29,15 @@ import {
   applyAppendRadioItems,
   decideTrackEnded
 } from './player';
-
-  // ── API Bridge ─────────────────────────────
-  const api = (window as any).api;
-
-  // Logları ana sürece gönder (stdout'tan izlenebilir)
-  function dlog(...args: any[]) {
-    const line = args.map((a) => {
-      try { return typeof a === 'string' ? a : JSON.stringify(a); } catch { return String(a); }
-    }).join(' ');
-    console.log('[Harmonic]', line);
-    try { api.debugLog(line); } catch {}
-  }
-
-  async function ytSearch(query: string) {
-    try { 
-      const r = await api.youtube.search(query);
-      console.log('[Renderer] Search result:', JSON.stringify({ songs: r.songs?.length, videos: r.videos?.length, albums: r.albums?.length }));
-      return r;
-    } catch (e) { 
-      console.error('[Renderer] Search error:', e);
-      return { songs: [], videos: [], albums: [], artists: [], playlists: [] }; 
-    }
-  }
-
-  async function ytPlayer(videoId: string) {
-    try {
-      const r = await api.youtube.player(videoId);
-      dlog('Player sonucu:', { streamUrl: !!r?.streamUrl, title: r?.title });
-      return r;
-    } catch (e) {
-      dlog('Player HATASI:', String(e));
-      return null;
-    }
-  }
-
-  async function ytHome() {
-    try { 
-      const r = await api.youtube.home();
-      console.log('[Renderer] Home result:', JSON.stringify({ items: r?.items?.length }));
-      return r; 
-    } catch (e) { 
-      console.error('[Renderer] Home error:', e);
-      return { items: [] }; 
-    }
-  }
-
-  async function ytSuggestions(input: string) {
-    try { return await api.youtube.suggestions(input); } catch { return []; }
-  }
-
-  async function ytLyrics(videoId: string, title?: string, artist?: string, duration?: number) {
-    try { return await api.youtube.lyrics(videoId, title, artist, duration); } catch { return null; }
-  }
+import {
+  api,
+  dlog,
+  ytSearch,
+  ytPlayer,
+  ytHome,
+  ytSuggestions,
+  ytLyrics
+} from './api-client';
 
   // ── Helpers ────────────────────────────────
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
