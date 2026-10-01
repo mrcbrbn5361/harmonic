@@ -62,6 +62,15 @@ import {
   shouldRestoreRepeat,
   REPEAT_ONE_BUTTON_HTML,
   collectRegistrySongs,
+  DISCORD_REFRESH_MS,
+  shouldSendDiscordUpdate,
+  buildDiscordActivityPayload,
+  resolveDiscordTrackKey,
+  resolvePollDiscordAction,
+  resolvePreviewDisplay,
+  resolvePreviewEffDuration,
+  previewProgressPct,
+  buildBotRecs,
 } from './system';
 
 describe('auth / chrome import', () => {
@@ -226,6 +235,64 @@ describe('discord / bot', () => {
     expect(extractRegenToken({ token: 'k' })).toBe('k');
     expect(extractRegenToken({})).toBe('');
     expect(normalizeCustomAppId('  a  ')).toBe('a');
+  });
+  it('throttles discord updates like updateDiscordForTrack', () => {
+    expect(DISCORD_REFRESH_MS).toBe(30000);
+    expect(shouldSendDiscordUpdate('', 0, 1000, '', 'T')).toBe(false);
+    expect(shouldSendDiscordUpdate('', 0, 1000, 'k', '')).toBe(false);
+    expect(shouldSendDiscordUpdate('', 0, 1000, 'k', 'T')).toBe(true);
+    expect(shouldSendDiscordUpdate('k', 1000, 1000 + DISCORD_REFRESH_MS - 1, 'k', 'T')).toBe(false);
+    expect(shouldSendDiscordUpdate('k', 1000, 1000 + DISCORD_REFRESH_MS, 'k', 'T')).toBe(true);
+    expect(shouldSendDiscordUpdate('k', 1000, 1001, 'k', 'T', true)).toBe(true);
+    expect(shouldSendDiscordUpdate('a', 0, 1, 'b', 'T')).toBe(true);
+  });
+  it('builds discord payload verbatim (timestamps, cover, buttons)', () => {
+    const p = buildDiscordActivityPayload({ key: 'k', title: 'T', artist: 'A', currentTime: 10, duration: 200, now: 60000 });
+    expect(p.details).toBe('T');
+    expect(p.state).toBe('A');
+    expect(p.startTimestamp).toBe(60000 - 10000);
+    expect(p.endTimestamp).toBe(60000 - 10000 + 200000);
+    expect(p.smallImageKey).toBe('logo');
+    expect((p as { largeImageText?: string }).largeImageText).toBe('T');
+    expect((p as { buttons?: unknown }).buttons).toBeUndefined();
+    const p11 = buildDiscordActivityPayload({ key: '12345678901', title: 'T', artist: '', coverUrl: 'c', album: 'Al', currentTime: 0, duration: 0, now: 5000 });
+    expect((p11 as { largeImageText?: string }).largeImageText).toBe('Al');
+    expect(p11.coverUrl).toBe('c');
+    expect((p11 as { buttons?: Array<{ url: string }> }).buttons?.[0].url).toContain('12345678901');
+    expect(p11.endTimestamp).toBeUndefined();
+    const pNeg = buildDiscordActivityPayload({ key: 'k', title: 'T', artist: 'A', currentTime: -5, duration: 10, now: 1000 });
+    expect(pNeg.startTimestamp).toBe(1000);
+    const pNow = buildDiscordActivityPayload({ key: 'k', title: 'T', artist: 'A', currentTime: 1, duration: 10 });
+    expect(typeof pNow.startTimestamp).toBe('number');
+  });
+  it('resolves discord keys, poll actions and preview display', () => {
+    expect(resolveDiscordTrackKey('id1', 'T', 'A')).toBe('id1');
+    expect(resolveDiscordTrackKey(undefined, 'T', 'A')).toBe('T|A');
+    expect(resolvePollDiscordAction(false, 'k', 'k', false)).toBe('clear');
+    expect(resolvePollDiscordAction(false, 'k', '', false)).toBe('none');
+    expect(resolvePollDiscordAction(true, 'new', 'old', true)).toBe('update');
+    expect(resolvePollDiscordAction(true, 'same', 'same', true)).toBe('refresh');
+    expect(resolvePollDiscordAction(true, '', '', true)).toBe('none');
+    expect(resolvePollDiscordAction(true, 'k', 'old', false)).toBe('none');
+    const d = resolvePreviewDisplay(undefined, undefined, undefined, undefined, null);
+    expect(d.displayTitle.length).toBeGreaterThan(0);
+    expect(d.displayCover).toContain('assets');
+    const d2 = resolvePreviewDisplay('T', 'A', 'C', 'Al', { title: 'S', artist: 'B', album: 'X', thumbnail: 'Y' });
+    expect(d2).toEqual({ displayTitle: 'T', displayArtist: 'A', displayAlbum: 'Al', displayCover: 'C' });
+    const d3 = resolvePreviewDisplay(undefined, undefined, undefined, undefined, { title: 'S', artist: 'B', album: 'X', thumbnail: 'Y' });
+    expect(d3).toEqual({ displayTitle: 'S', displayArtist: 'B', displayAlbum: 'X', displayCover: 'Y' });
+    const d4 = resolvePreviewDisplay('', '', '', '', undefined);
+    expect(d4.displayTitle.length).toBeGreaterThan(0);
+    expect(resolvePreviewEffDuration(100)).toBe(100);
+    expect(resolvePreviewEffDuration(0)).toBe(287);
+    expect(previewProgressPct(50, 200)).toBe(25);
+    expect(previewProgressPct(0, 0)).toBe(25);
+    expect(previewProgressPct(-5, 100)).toBe(0);
+    expect(previewProgressPct(500, 100)).toBe(100);
+    const recs = buildBotRecs([{ id: 'a', title: 'T', artist: 'A', thumbnail: 'th' }]);
+    expect(recs[0].url).toContain('a');
+    expect(buildBotRecs([])).toEqual([]);
+    expect(buildBotRecs([{ id: '', title: 'T', artist: 'A', thumbnail: 'th' }])[0].url).toBeUndefined();
   });
 });
 

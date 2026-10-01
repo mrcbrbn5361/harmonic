@@ -85,3 +85,17 @@ export function decideTrackEnded(
   }
   return 'next';
 }
+
+export type TogglePlayAction = 'pause' | 'resume' | 'play-queue' | 'noop';
+
+/** togglePlay'in saf kararı: çalıyorsa duraklat, şarkı varsa devam, kuyruk varsa baştan (app.ts ile birebir). */
+export function resolveTogglePlayAction(
+  playing: boolean,
+  hasCurrentSong: boolean,
+  queueLength: number
+): TogglePlayAction {
+  if (playing) return 'pause';
+  if (hasCurrentSong) return 'resume';
+  if (queueLength > 0) return 'play-queue';
+  return 'noop';
+}

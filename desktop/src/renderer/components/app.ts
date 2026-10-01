@@ -27,7 +27,8 @@ import {
   cycleRepeat,
   filterRadioItems,
   applyAppendRadioItems,
-  decideTrackEnded
+  decideTrackEnded,
+  resolveTogglePlayAction,
 } from './player';
 import {
   api,
@@ -198,6 +199,15 @@ import {
   shouldAbortBotAuthToggle,
   extractRegenToken,
   normalizeCustomAppId,
+  DISCORD_REFRESH_MS,
+  shouldSendDiscordUpdate,
+  buildDiscordActivityPayload,
+  resolveDiscordTrackKey,
+  resolvePollDiscordAction,
+  resolvePreviewDisplay,
+  resolvePreviewEffDuration,
+  previewProgressPct,
+  buildBotRecs,
   INIT_DEFAULT_PAGE,
   normalizeSavedVolume,
   shouldRestoreVolume,
@@ -949,14 +959,13 @@ import {
       }
       // Discord: parça değişince güncelle (timer korunur), durunca temizle
       const trackKey = u.videoId || state.currentSong?.id || '';
-      if (!state.playing) {
-        if (lastDiscordKey) clearDiscordTrack();
-      } else if (u.title && u.artist && trackKey) {
-        if (trackKey !== lastDiscordKey) {
-          updateDiscordForTrack(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
-        } else {
-          maybeRefreshDiscord(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
-        }
+      const pollAction = resolvePollDiscordAction(state.playing, trackKey, lastDiscordKey, !!(u.title && u.artist));
+      if (pollAction === 'clear') {
+        clearDiscordTrack();
+      } else if (pollAction === 'update') {
+        updateDiscordForTrack(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
+      } else if (pollAction === 'refresh') {
+        maybeRefreshDiscord(trackKey, u.title, u.artist, u.thumbnail, u.album || state.currentSong?.album);
       }
     });
 
@@ -1069,34 +1078,17 @@ import {
   // Eşleşmeyen parça poll takibi (navigasyon takılması / YTM autoplay ayrımı)
   let _mismatchVid = '';
   let _mismatchCount = 0;
-  const DISCORD_REFRESH_MS = 30000;
   function updateDiscordForTrack(key: string, title: string, artist: string, coverUrl?: string, album?: string, force = false) {
-    if (!key || !title) return;
     const now = Date.now();
-    if (key === lastDiscordKey && !force) {
-      // Aynı parça: 30sn'de bir progress tazele (rate limit: 5/dk altında)
-      if (now - lastDiscordSentAt < DISCORD_REFRESH_MS) return;
-    }
+    if (!shouldSendDiscordUpdate(lastDiscordKey, lastDiscordSentAt, now, key, title, force, DISCORD_REFRESH_MS)) return;
     lastDiscordKey = key;
     lastDiscordSentAt = now;
-    const posMs = Math.max(0, Math.round((state.currentTime || 0) * 1000));
-    const start = Date.now() - posMs;
-    const payload: Record<string, unknown> = {
-      details: title,
-      state: artist || '',
-      startTimestamp: start,
-      // Spotify görünümü: küçük rozet = bizim logo, hover = Harmonic Music
-      smallImageKey: 'logo',
-      smallImageText: 'Harmonic Music'
-    };
-    if (state.duration > 0) payload.endTimestamp = start + Math.round(state.duration * 1000);
-    if (coverUrl) payload.coverUrl = coverUrl;
-    // ytmdesktop2: large_text her zaman album/title olmalı, yoksa hover eski kalıyor
-    (payload as any).largeImageText = album || title;
-    // YouTube Music'te Aç butonu
-    if (key && key.length === 11) {
-      (payload as any).buttons = [{ label: "YouTube Music'te Aç", url: `https://music.youtube.com/watch?v=${key}` }];
-    }
+    const payload = buildDiscordActivityPayload({
+      key, title, artist, coverUrl, album,
+      currentTime: state.currentTime || 0,
+      duration: state.duration,
+      now,
+    });
     api.discord.setActivity(payload).catch((e: any) => dlog('Discord hatası:', String(e)));
     syncBotServerAndLivePreview(title, artist, coverUrl, album);
   }
@@ -1124,10 +1116,9 @@ import {
     if (usernameEl) usernameEl.textContent = currentUserName;
     if (headerUserEl) headerUserEl.textContent = currentUserName;
 
-    const displayTitle = title || state.currentSong?.title || 'Ağlama Yar';
-    const displayArtist = artist || state.currentSong?.artist || 'Nurettin Rençber';
-    const displayAlbum = album || state.currentSong?.album || 'Eski Yara';
-    const displayCover = coverUrl || state.currentSong?.thumbnail || 'assets/icon.png';
+    const { displayTitle, displayArtist, displayAlbum, displayCover } = resolvePreviewDisplay(
+      title, artist, coverUrl, album, state.currentSong,
+    );
 
     if (titleEl) titleEl.textContent = displayTitle;
     if (artistEl) artistEl.textContent = displayArtist;
@@ -1135,14 +1126,14 @@ import {
     if (thumbEl && displayCover) thumbEl.src = displayCover;
 
     // Sayı + formatlı alanlar tutarlı olmalı (canlı testte duration:0 / "04:47" çelişkisi yakalandı).
-    const effDuration = state.duration > 0 ? state.duration : 287;
+    const effDuration = resolvePreviewEffDuration(state.duration);
     const curFmt = formatTime(state.currentTime, true);
     const durFmt = formatTime(effDuration, true);
 
     if (curTimeEl) curTimeEl.textContent = curFmt;
     if (totTimeEl) totTimeEl.textContent = durFmt;
     if (barFillEl) {
-      const pct = (state.duration > 0) ? Math.min(100, Math.max(0, (state.currentTime / state.duration) * 100)) : 25;
+      const pct = previewProgressPct(state.currentTime, state.duration);
       barFillEl.style.width = `${pct}%`;
     }
 
@@ -1204,13 +1195,7 @@ import {
 
     // 2. BotServer (Port 9863) State Güncelleme
     if ((api as any).botServer) {
-      const recs = upcoming.map(s => ({
-        id: s.id,
-        title: s.title,
-        artist: s.artist,
-        thumbnail: s.thumbnail,
-        url: s.id ? `https://music.youtube.com/watch?v=${s.id}` : undefined
-      }));
+      const recs = buildBotRecs(upcoming);
 
       (api as any).botServer.updateState({
         status: state.playing ? 'playing' : (state.paused ? 'paused' : 'stopped'),
@@ -1257,7 +1242,7 @@ import {
   }
 
   function setDiscordActivity(title: string, artist: string, coverUrl?: string) {
-    const key = state.currentSong?.id || (title + '|' + artist);
+    const key = resolveDiscordTrackKey(state.currentSong?.id, title, artist);
     if (!title && !artist) {
       clearDiscordTrack();
       return;
@@ -1266,7 +1251,8 @@ import {
   }
 
   function togglePlay() {
-    if (state.playing) {
+    const action = resolveTogglePlayAction(state.playing, !!state.currentSong, state.queue.length);
+    if (action === 'pause') {
       api.player.pause().catch(() => {});
       state.playing = false;
       state.paused = true;
@@ -1275,17 +1261,17 @@ import {
       // Discord'tan parçayı temizle - 100ms sonra tekrar kontrol et (poll loop'dan kaynaklı çakışma önleme)
       clearDiscordTrack();
       setTimeout(() => { if (!state.playing) clearDiscordTrack(); }, 100);
-    } else {
+    } else if (action === 'resume') {
       // Önce şarkı varsa resume et, yoksa sıradakini başlat
+      api.player.resume().catch(() => {});
+      state.playing = true;
+      state.paused = false;
+      updatePlayIcon();
       if (state.currentSong) {
-        api.player.resume().catch(() => {});
-        state.playing = true;
-        state.paused = false;
-        updatePlayIcon();
         updateDiscordForTrack(state.currentSong.id, state.currentSong.title, state.currentSong.artist, state.currentSong.thumbnail);
-      } else if (state.queue.length) {
-        playSong(state.queue[state.queueIndex >= 0 ? state.queueIndex : 0]);
       }
+    } else if (action === 'play-queue') {
+      playSong(state.queue[state.queueIndex >= 0 ? state.queueIndex : 0]);
     }
   }
 

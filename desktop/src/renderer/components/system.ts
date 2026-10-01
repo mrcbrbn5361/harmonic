@@ -286,6 +286,152 @@ export function resolveDiscordRpcStatus(ready: boolean): string {
   return ready ? '✓ Bağlı (RPC)' : DISCORD_WAITING_TEXT;
 }
 
+/* ── Discord activity payload (G5: app.ts updateDiscordForTrack ile birebir) ── */
+
+/** Aynı parça progress tazele aralığı (app.ts yerel sabit ile birebir). */
+export const DISCORD_REFRESH_MS = 30000;
+/** Önizleme yedek metinleri (app.ts syncBotServerAndLivePreview ile birebir). */
+export const DISCORD_PREVIEW_TITLE_FALLBACK = 'Ağlama Yar';
+export const DISCORD_PREVIEW_ARTIST_FALLBACK = 'Nurettin Rençber';
+export const DISCORD_PREVIEW_ALBUM_FALLBACK = 'Eski Yara';
+export const DISCORD_PREVIEW_COVER_FALLBACK = 'assets/icon.png';
+/** Süre bilinmiyorsa önizleme yedeği (app.ts `state.duration > 0 ? ... : 287` ile birebir). */
+export const DISCORD_PREVIEW_DURATION_FALLBACK = 287;
+
+/** updateDiscordForTrack gönderim guard'ı: key/title yoksa asla, aynı parçada 30sn dolmadan asla. */
+export function shouldSendDiscordUpdate(
+  lastKey: string,
+  lastSentAt: number,
+  now: number,
+  key: string,
+  title: string,
+  force = false,
+  refreshMs = DISCORD_REFRESH_MS,
+): boolean {
+  if (!key || !title) return false;
+  if (key === lastKey && !force) {
+    if (now - lastSentAt < refreshMs) return false;
+  }
+  return true;
+}
+
+export interface DiscordPayloadInput {
+  key: string;
+  title: string;
+  artist: string;
+  coverUrl?: string;
+  album?: string;
+  currentTime: number;
+  duration: number;
+  now?: number;
+}
+
+/** Discord activity payload'ı (app.ts updateDiscordForTrack gövdesi ile birebir). */
+export function buildDiscordActivityPayload(input: DiscordPayloadInput): Record<string, unknown> {
+  const now = input.now ?? Date.now();
+  const posMs = Math.max(0, Math.round((input.currentTime || 0) * 1000));
+  const start = now - posMs;
+  const payload: Record<string, unknown> = {
+    details: input.title,
+    state: input.artist || '',
+    startTimestamp: start,
+    smallImageKey: 'logo',
+    smallImageText: 'Harmonic Music',
+  };
+  if (input.duration > 0) payload.endTimestamp = start + Math.round(input.duration * 1000);
+  if (input.coverUrl) payload.coverUrl = input.coverUrl;
+  (payload as { largeImageText?: string }).largeImageText = input.album || input.title;
+  if (input.key && input.key.length === 11) {
+    (payload as { buttons?: Array<{ label: string; url: string }> }).buttons = [
+      { label: "YouTube Music'te Aç", url: `https://music.youtube.com/watch?v=${input.key}` },
+    ];
+  }
+  return payload;
+}
+
+/** setDiscordActivity parça anahtarı: currentSong.id yoksa title|artist (app.ts ile birebir). */
+export function resolveDiscordTrackKey(
+  currentSongId: string | undefined,
+  title: string,
+  artist: string,
+): string {
+  return currentSongId || `${title}|${artist}`;
+}
+
+export type PollDiscordAction = 'clear' | 'update' | 'refresh' | 'none';
+
+/** Poll-loop Discord dalı (app.ts 950-960 bloğu ile birebir). */
+export function resolvePollDiscordAction(
+  playing: boolean,
+  trackKey: string,
+  lastKey: string,
+  hasMeta: boolean,
+): PollDiscordAction {
+  if (!playing) {
+    if (lastKey) return 'clear';
+    return 'none';
+  }
+  if (hasMeta && trackKey) {
+    if (trackKey !== lastKey) return 'update';
+    return 'refresh';
+  }
+  return 'none';
+}
+
+export interface PreviewDisplay {
+  displayTitle: string;
+  displayArtist: string;
+  displayAlbum: string;
+  displayCover: string;
+}
+
+/** Önizleme görünen alanları (app.ts displayTitle/Artist/Album/Cover zinciri ile birebir). */
+export function resolvePreviewDisplay(
+  title: string | undefined,
+  artist: string | undefined,
+  coverUrl: string | undefined,
+  album: string | undefined,
+  currentSong?: { title?: string; artist?: string; album?: string; thumbnail?: string } | null,
+): PreviewDisplay {
+  return {
+    displayTitle: title || currentSong?.title || DISCORD_PREVIEW_TITLE_FALLBACK,
+    displayArtist: artist || currentSong?.artist || DISCORD_PREVIEW_ARTIST_FALLBACK,
+    displayAlbum: album || currentSong?.album || DISCORD_PREVIEW_ALBUM_FALLBACK,
+    displayCover: coverUrl || currentSong?.thumbnail || DISCORD_PREVIEW_COVER_FALLBACK,
+  };
+}
+
+/** Önizleme etkin süresi (app.ts `state.duration > 0 ? ... : 287` ile birebir). */
+export function resolvePreviewEffDuration(duration: number): number {
+  return duration > 0 ? duration : DISCORD_PREVIEW_DURATION_FALLBACK;
+}
+
+/** Önizleme ilerleme yüzdesi (app.ts barFill dalı ile birebir). */
+export function previewProgressPct(currentTime: number, duration: number): number {
+  if (duration > 0) return Math.min(100, Math.max(0, (currentTime / duration) * 100));
+  return 25;
+}
+
+export interface BotRecInput {
+  id: string;
+  title: string;
+  artist: string;
+  thumbnail: string;
+}
+
+/** Bot server öneri listesi (app.ts upcoming.map ile birebir). */
+export function buildBotRecs(
+  upcoming: readonly BotRecInput[],
+): Array<{ id: string; title: string; artist: string; thumbnail: string; url?: string }> {
+  return upcoming.map((s) => ({
+    id: s.id,
+    title: s.title,
+    artist: s.artist,
+    thumbnail: s.thumbnail,
+    url: s.id ? `https://music.youtube.com/watch?v=${s.id}` : undefined,
+  }));
+}
+
 /** Discord hesap etiketi (app.ts name/username/Bağlı zinciri ile birebir). */
 export function resolveDiscordAccountLabel(u: { name?: unknown; username?: unknown } | null | undefined): string {
   if (!u) return 'Bağlı değil';

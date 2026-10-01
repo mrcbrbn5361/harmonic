@@ -6,6 +6,7 @@ import {
   filterRadioItems,
   applyAppendRadioItems,
   decideTrackEnded,
+  resolveTogglePlayAction,
   type PlayerStateSlice,
 } from './player';
 import type { QueueItem, Song } from './state';
@@ -108,5 +109,16 @@ describe('decideTrackEnded', () => {
     expect(decideTrackEnded(mid, false)).toBe('next');
     const noSong = baseState({ currentSong: null });
     expect(decideTrackEnded(noSong, true)).toBe('stop');
+  });
+});
+
+describe('resolveTogglePlayAction', () => {
+  it('togglePlay dallarıyla birebir: pause / resume / play-queue / noop', () => {
+    expect(resolveTogglePlayAction(true, true, 5)).toBe('pause');
+    expect(resolveTogglePlayAction(true, false, 0)).toBe('pause');
+    expect(resolveTogglePlayAction(false, true, 0)).toBe('resume');
+    expect(resolveTogglePlayAction(false, true, 5)).toBe('resume');
+    expect(resolveTogglePlayAction(false, false, 3)).toBe('play-queue');
+    expect(resolveTogglePlayAction(false, false, 0)).toBe('noop');
   });
 });
