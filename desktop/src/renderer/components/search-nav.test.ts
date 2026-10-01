@@ -17,6 +17,16 @@ import {
   normalizeSearchFilter,
   resolveNavLoader,
   nextNavGeneration,
+  buildSuggestionListHtml,
+  buildSearchEmptyHtml,
+  buildSearchLoadingHtml,
+  buildSearchNoResultsHtml,
+  buildSearchErrorHtml,
+  buildAlbumCardHtml,
+  buildArtistCardHtml,
+  buildAlbumsSectionHtml,
+  buildArtistsSectionHtml,
+  resolveSearchSections,
 } from './search-nav';
 
 function mkSong(id: string): Song {
@@ -133,5 +143,63 @@ describe('resolveNavLoader / nextNavGeneration (navigateTo)', () => {
   it('nesil sayacı bir artar', () => {
     expect(nextNavGeneration(0)).toBe(1);
     expect(nextNavGeneration(7)).toBe(8);
+  });
+});
+
+describe('G3 builders (setupSearch/doSearch HTML, app.ts ile birebir)', () => {
+  it('öneri listesi escape uygular ve data-q taşır', () => {
+    const html = buildSuggestionListHtml(['hello', '<b>x</b>']);
+    expect(html).toContain('data-q="hello"');
+    expect(html).toContain('<span>hello</span>');
+    expect(html).not.toContain('<b>x</b>');
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;');
+    expect(buildSuggestionListHtml([])).toBe('');
+  });
+  it('boş/yükleniyor/sonuç-yok/hata HTML sabitleri app.ts ile birebir', () => {
+    expect(buildSearchEmptyHtml()).toContain('Müzik aramaya başlayın');
+    expect(buildSearchEmptyHtml()).toContain('Sanatçı, şarkı veya albüm adı yazın');
+    expect(buildSearchLoadingHtml()).toContain('Aranıyor...');
+    expect(buildSearchNoResultsHtml()).toContain('Sonuç bulunamadı');
+    expect(buildSearchErrorHtml()).toContain('Tekrar Dene');
+    expect(buildSearchErrorHtml()).toContain('btn-retry');
+  });
+  it('albüm kartı escape uygular, boş artist güvenli', () => {
+    const html = buildAlbumCardHtml({ browseId: 'br1', title: 'T<1>', thumbnail: 'http://img/a.jpg', artist: 'Art&Co' });
+    expect(html).toContain('data-browse="br1"');
+    expect(html).toContain('T&lt;1&gt;');
+    expect(html).toContain('Art&amp;Co');
+    expect(buildAlbumCardHtml({ browseId: 'b', title: 't', thumbnail: 'u' })).toContain('card-sub');
+  });
+  it('sanatçı kartı name alanını kullanır', () => {
+    const html = buildArtistCardHtml({ browseId: 'ar1', name: 'N<ame>', thumbnail: 'http://img/n.jpg' });
+    expect(html).toContain('data-browse="ar1"');
+    expect(html).toContain('N&lt;ame&gt;');
+  });
+  it('bölüm sarmalayıcılar başlık + grid içerir', () => {
+    const al = buildAlbumsSectionHtml([{ browseId: 'b1', title: 'A', thumbnail: 't' }]);
+    expect(al).toContain('Albümler');
+    expect(al).toContain('card-grid');
+    expect(al).toContain('data-browse="b1"');
+    expect(buildAlbumsSectionHtml([])).toContain('Albümler');
+    const ar = buildArtistsSectionHtml([{ browseId: 's1', name: 'S', thumbnail: 't' }]);
+    expect(ar).toContain('Sanatçılar');
+    expect(ar).toContain('data-browse="s1"');
+  });
+});
+
+describe('resolveSearchSections (doSearch bölüm dalları)', () => {
+  it('sonuç + all filtresi tüm bölümleri açar', () => {
+    const r = resolveSearchSections(
+      { songs: [mkSong('s1')], videos: [mkSong('v1')], albums: [{ id: 'a' }], artists: [{ id: 'x' }] },
+      'all',
+    );
+    expect(r).toEqual({ songs: true, videos: true, albums: true, artists: true });
+  });
+  it('filtre eşleşmeyeni kapatır, boş sonuç kapatır', () => {
+    const r = resolveSearchSections({ songs: [mkSong('s1')], videos: [mkSong('v1')] }, 'songs');
+    expect(r.songs).toBe(true);
+    expect(r.videos).toBe(false);
+    expect(r.albums).toBe(false);
+    expect(resolveSearchSections({}, 'all')).toEqual({ songs: false, videos: false, albums: false, artists: false });
   });
 });

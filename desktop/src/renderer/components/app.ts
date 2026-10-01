@@ -106,10 +106,17 @@ import {
   isStaleSearch,
   buildSearchCache,
   hasAnyResults,
-  isSearchSectionVisible,
   normalizeSearchFilter,
   resolveNavLoader,
   nextNavGeneration,
+  buildSuggestionListHtml,
+  buildSearchEmptyHtml,
+  buildSearchLoadingHtml,
+  buildSearchNoResultsHtml,
+  buildSearchErrorHtml,
+  buildAlbumsSectionHtml,
+  buildArtistsSectionHtml,
+  resolveSearchSections,
 } from './search-nav';
 import {
   HOME_CARDS_LIMIT,
@@ -421,12 +428,7 @@ import {
           // Önce önerileri göster
           const suggestions = await ytSuggestions(query);
           if (suggestions.length && document.activeElement === input) {
-            dropdown.innerHTML = suggestions.map((s: string) =>
-              `<div class="suggestion-item" data-q="${escapeHtml(s)}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <span>${escapeHtml(s)}</span>
-              </div>`
-            ).join('');
+            dropdown.innerHTML = buildSuggestionListHtml(suggestions);
             show(dropdown);
             dropdown.querySelectorAll('.suggestion-item').forEach((item) => {
               item.addEventListener('click', () => {
@@ -447,12 +449,7 @@ import {
         hide(dropdown);
         // Input temizlendiğinde sonuçları da temizle
         if (shouldClearOnEmpty(query)) {
-          $('#searchResults').innerHTML = `
-            <div class="empty-state">
-              <div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
-              <p class="empty-text">Müzik aramaya başlayın</p>
-              <p class="empty-hint-text">Sanatçı, şarkı veya albüm adı yazın</p>
-            </div>`;
+          $('#searchResults').innerHTML = buildSearchEmptyHtml();
           lastSearchQuery = '';
         }
       }
@@ -485,12 +482,7 @@ import {
       input.value = '';
       clear.classList.remove('visible');
       lastSearchQuery = '';
-      $('#searchResults').innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
-          <p class="empty-text">Müzik aramaya başlayın</p>
-          <p class="empty-hint-text">Sanatçı, şarkı veya albüm adı yazın</p>
-        </div>`;
+      $('#searchResults').innerHTML = buildSearchEmptyHtml();
       input.focus();
     });
 
@@ -512,7 +504,7 @@ import {
     activeSearchId = nextSearchId(activeSearchId);
     const searchId = activeSearchId;
     const container = $('#searchResults');
-    container.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Aranıyor...</p></div>';
+    container.innerHTML = buildSearchLoadingHtml();
 
     try {
       dlog('doSearch:', query);
@@ -522,43 +514,35 @@ import {
       state.lastSearchResults = buildSearchCache(results);
 
       if (!hasAnyResults(results)) {
-        container.innerHTML = '<div class="empty-state"><p class="empty-text">Sonuç bulunamadı</p></div>';
+        container.innerHTML = buildSearchNoResultsHtml();
         return;
       }
 
       let html = '';
       const filter = state.searchFilter;
+      const sections = resolveSearchSections(results, filter);
 
       // Şarkılar
-      if (results.songs?.length && isSearchSectionVisible(filter, 'songs')) {
+      if (sections.songs) {
         html += `<div class="song-list">${results.songs.map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div>`;
       }
 
       // Videolar
-      if (results.videos?.length && isSearchSectionVisible(filter, 'videos')) {
+      if (sections.videos) {
         html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Videolar</h3><div class="song-list">${results.videos.map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div></div>`;
       }
 
       // Albümler
-      if (results.albums?.length && isSearchSectionVisible(filter, 'albums')) {
-        html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3><div class="card-grid">${results.albums.map((a: any) => `
-          <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
-            <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${escapeHtml(a.title)}</div>
-            <div class="card-sub">${escapeHtml(a.artist || '')}</div>
-          </div>`).join('')}</div></div>`;
+      if (sections.albums) {
+        html += buildAlbumsSectionHtml(results.albums as any);
       }
 
       // Sanatçılar
-      if (results.artists?.length && isSearchSectionVisible(filter, 'artists')) {
-        html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3><div class="card-grid">${results.artists.map((a: any) => `
-          <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
-            <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${escapeHtml(a.name)}</div>
-          </div>`).join('')}</div></div>`;
+      if (sections.artists) {
+        html += buildArtistsSectionHtml(results.artists as any);
       }
 
-      container.innerHTML = html || '<div class="empty-state"><p class="empty-text">Sonuç bulunamadı</p></div>';
+      container.innerHTML = html || buildSearchNoResultsHtml();
       attachSongEvents(container, 'Arama Sonuçları', 'radio');
 
       // Albüm ve sanatçı kartlarına tıklama dinleyicisi ekle
@@ -571,7 +555,7 @@ import {
         });
       });
     } catch (err) {
-      container.innerHTML = '<div class="empty-state"><p class="empty-text">Arama yapılırken bir hata oluştu</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+      container.innerHTML = buildSearchErrorHtml();
       container.querySelector('.btn-retry')?.addEventListener('click', () => doSearch(query));
     }
   }

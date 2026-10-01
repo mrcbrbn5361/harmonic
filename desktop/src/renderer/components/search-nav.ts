@@ -7,6 +7,7 @@
    ============================================ */
 
 import type { Song, AppState } from './state';
+import { escapeHtml } from './views';
 
 /** setupSearch'teki debounce süresi (ms). */
 export const SEARCH_DEBOUNCE_MS = 200;
@@ -97,4 +98,98 @@ export function resolveNavLoader(page: string): NavLoader | null {
 /** navigateTo sayacı: state.navGeneration++ ile birebir. */
 export function nextNavGeneration(gen: number): number {
   return gen + 1;
+}
+
+export interface AlbumCardInput {
+  browseId?: string;
+  title?: string;
+  thumbnail?: string;
+  artist?: string;
+}
+
+export interface ArtistCardInput {
+  browseId?: string;
+  name?: string;
+  thumbnail?: string;
+}
+
+/** setupSearch öneri listesi HTML'i (app.ts dropdown.innerHTML ile birebir). */
+export function buildSuggestionListHtml(suggestions: string[]): string {
+  return suggestions.map((s: string) =>
+    `<div class="suggestion-item" data-q="${escapeHtml(s)}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span>${escapeHtml(s)}</span>
+              </div>`
+  ).join('');
+}
+
+/** Arama boş-durum HTML'i (setupSearch input-temizleme + clear-butonu ile birebir). */
+export function buildSearchEmptyHtml(): string {
+  return `
+            <div class="empty-state">
+              <div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
+              <p class="empty-text">Müzik aramaya başlayın</p>
+              <p class="empty-hint-text">Sanatçı, şarkı veya albüm adı yazın</p>
+            </div>`;
+}
+
+/** doSearch yükleniyor HTML'i (container.innerHTML ile birebir). */
+export function buildSearchLoadingHtml(): string {
+  return '<div class="empty-state"><p class="empty-hint-text">Aranıyor...</p></div>';
+}
+
+/** doSearch boş-sonuç HTML'i (erken-dönüş + html|| fallback ile birebir). */
+export function buildSearchNoResultsHtml(): string {
+  return '<div class="empty-state"><p class="empty-text">Sonuç bulunamadı</p></div>';
+}
+
+/** doSearch hata HTML'i (catch bloğu ile birebir). */
+export function buildSearchErrorHtml(): string {
+  return '<div class="empty-state"><p class="empty-text">Arama yapılırken bir hata oluştu</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+}
+
+/** Tek albüm kartı HTML'i (doSearch albümler bölümü ile birebir). */
+export function buildAlbumCardHtml(a: AlbumCardInput): string {
+  return `
+          <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
+            <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
+            <div class="card-title">${escapeHtml(a.title)}</div>
+            <div class="card-sub">${escapeHtml(a.artist || '')}</div>
+          </div>`;
+}
+
+/** Tek sanatçı kartı HTML'i (doSearch sanatçılar bölümü ile birebir). */
+export function buildArtistCardHtml(a: ArtistCardInput): string {
+  return `
+          <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
+            <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
+            <div class="card-title">${escapeHtml(a.name)}</div>
+          </div>`;
+}
+
+/** Albümler bölümü sarmalayıcısı (doSearch Albümler bloğu ile birebir). */
+export function buildAlbumsSectionHtml(albums: AlbumCardInput[]): string {
+  return `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3><div class="card-grid">${albums.map((a) => buildAlbumCardHtml(a)).join('')}</div></div>`;
+}
+
+/** Sanatçılar bölümü sarmalayıcısı (doSearch Sanatçılar bloğu ile birebir). */
+export function buildArtistsSectionHtml(artists: ArtistCardInput[]): string {
+  return `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3><div class="card-grid">${artists.map((a) => buildArtistCardHtml(a)).join('')}</div></div>`;
+}
+
+export interface SearchSectionVisibility {
+  songs: boolean;
+  videos: boolean;
+  albums: boolean;
+  artists: boolean;
+}
+
+/** doSearch bölüm dalları: sonuç-varlığı + chip filtresi (app.ts if'leri ile birebir). */
+export function resolveSearchSections(results: SearchResults, filter: SearchFilter): SearchSectionVisibility {
+  return {
+    songs: Boolean(results.songs?.length && isSearchSectionVisible(filter, 'songs')),
+    videos: Boolean(results.videos?.length && isSearchSectionVisible(filter, 'videos')),
+    albums: Boolean(results.albums?.length && isSearchSectionVisible(filter, 'albums')),
+    artists: Boolean(results.artists?.length && isSearchSectionVisible(filter, 'artists')),
+  };
 }
