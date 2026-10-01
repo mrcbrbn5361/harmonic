@@ -50,6 +50,14 @@ import {
   getUpcomingContext,
   type LyricLine
 } from './views';
+import {
+  show,
+  hide,
+  toggle,
+  showToast,
+  confirmDialog,
+  closePanels as closePanelsImpl
+} from './ui-feedback';
 
   // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -80,9 +88,10 @@ import {
     if (ctxEl) ctxEl.textContent = name || '';
   }
 
-  function show(el: HTMLElement) { el.classList.add('open', 'visible'); }
-  function hide(el: HTMLElement) { el.classList.remove('open', 'visible'); }
-  function toggle(el: HTMLElement) { el.classList.contains('open') ? hide(el) : show(el); }
+  // ── Paneller (kapatma çekirdeği ui-feedback.ts'tedir) ──
+  function closePanels(): void {
+    closePanelsImpl(state);
+  }
 
   // ── Auth (sanitizeName views.ts'tedir) ──
 
@@ -222,65 +231,6 @@ import {
           setTimeout(close, 1500);
         } else { status.textContent = `Hata: ${r?.error || 'Pencerede giriş yapılmamış'}`; status.style.color = 'var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
       } catch(e:any){ status.textContent=`Hata: ${e?.message||String(e)}`; status.style.color='var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
-    });
-  }
-
-  // ── Toast Notification ─────────────────────
-  function showToast(message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') {
-    const toast = document.createElement('div');
-    toast.className = `toast toast-${type}`;
-    const span = document.createElement('span');
-    span.textContent = message;
-    toast.appendChild(span);
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'toast-close';
-    closeBtn.textContent = '\u00d7';
-    toast.appendChild(closeBtn);
-    document.body.appendChild(toast);
-
-    // Stack: position based on existing toasts
-    const existing = document.querySelectorAll('.toast.show');
-    const offset = existing.length * 60;
-    toast.style.bottom = `${100 + offset}px`;
-
-    setTimeout(() => toast.classList.add('show'), 10);
-    setTimeout(() => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 300);
-    }, 4000);
-
-    toast.querySelector('.toast-close')?.addEventListener('click', () => {
-      toast.classList.remove('show');
-      setTimeout(() => toast.remove(), 300);
-    });
-  }
-
-  // ── Generic Confirm (native confirm() yerine — P3-07) ──
-  function confirmDialog(title: string, message: string, okLabel = 'Sil'): Promise<boolean> {
-    return new Promise((resolve) => {
-      const modal = $('#confirmModal');
-      const titleEl = $('#confirmTitle');
-      const msgEl = $('#confirmMessage');
-      const okBtn = $('#confirmOk') as HTMLButtonElement;
-      const cancelBtn = $('#confirmCancel');
-      if (!modal || !okBtn || !cancelBtn) { resolve(false); return; }
-      titleEl.textContent = title;
-      msgEl.textContent = message;
-      okBtn.textContent = okLabel;
-      const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') done(false); };
-      const done = (v: boolean) => {
-        modal.classList.remove('visible');
-        okBtn.onclick = null;
-        cancelBtn.onclick = null;
-        modal.onclick = null;
-        document.removeEventListener('keydown', onKey);
-        resolve(v);
-      };
-      okBtn.onclick = () => done(true);
-      cancelBtn.onclick = () => done(false);
-      modal.onclick = (e) => { if (e.target === modal) done(false); };
-      document.addEventListener('keydown', onKey);
-      modal.classList.add('visible');
     });
   }
 
@@ -1428,12 +1378,6 @@ function updatePlayIcon() {
     $('#closeLyrics').addEventListener('click', closePanels);
     $('#closeQueue').addEventListener('click', closePanels);
     backdrop.addEventListener('click', closePanels);
-  }
-
-  function closePanels() {
-    state.panelOpen = null;
-    $$('.panel').forEach((p) => hide(p as HTMLElement));
-    hide($('#panelBackdrop'));
   }
 
   // ── Context Menu ────────────────────────────

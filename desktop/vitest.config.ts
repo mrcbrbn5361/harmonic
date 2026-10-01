@@ -12,6 +12,7 @@ export default defineConfig({
         'src/renderer/components/player.ts',
         'src/renderer/components/api-client.ts',
         'src/renderer/components/views.ts',
+        'src/renderer/components/ui-feedback.ts',
       ],
     },
   },
