@@ -65,6 +65,22 @@ import {
   filterRadioRecs,
   buildPlaybackContext,
 } from './song-row';
+import {
+  clampVolume,
+  volumeTier,
+  volumeStepTo,
+  muteToggleTarget,
+  seekFraction,
+  seekTimeFor,
+  clampSeekTarget,
+  keySeekStep,
+  playIconVisibility,
+  likeFill,
+  applyLikeToggle,
+  isTypingTarget,
+  isRepeatActive,
+  isRepeatOne,
+} from './transport';
 
   // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -548,10 +564,11 @@ import {
     }
     const volBtn = $('#btnVolume');
     if (volBtn) {
-      if (state.volume === 0) {
+      const tier = volumeTier(state.volume);
+      if (tier === 'muted') {
         volBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>';
         volBtn.title = 'Sesi Aç (Mute)';
-      } else if (state.volume < 50) {
+      } else if (tier === 'low') {
         volBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>';
         volBtn.title = 'Sesi Kapat';
       } else {
@@ -577,10 +594,9 @@ import {
     let isDragging = false;
 
     function seekFromEvent(e: MouseEvent) {
-      if (!state.duration) return;
       const rect = scrubber.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      const t = pct * state.duration;
+      const t = seekTimeFor(seekFraction(e.clientX, rect.left, rect.width), state.duration);
+      if (t === null) return;
       api.player.seek(t).catch(() => {});
     }
 
@@ -591,10 +607,11 @@ import {
     // Hover tooltip: imleçteki zaman
     const scrubTooltip = $('#scrubberTooltip');
     scrubber.addEventListener('mousemove', (e) => {
-      if (!state.duration) return;
       const rect = scrubber.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      scrubTooltip.textContent = formatTime(pct * state.duration);
+      const pct = seekFraction(e.clientX, rect.left, rect.width);
+      const t = seekTimeFor(pct, state.duration);
+      if (t === null) return;
+      scrubTooltip.textContent = formatTime(t);
       scrubTooltip.style.left = `${pct * 100}%`;
     });
 
@@ -602,10 +619,10 @@ import {
       isDragging = true;
       seekFromEvent(e);
       const onMove = (ev: MouseEvent) => {
-        if (!isDragging || !state.duration) return;
         const rect = scrubber.getBoundingClientRect();
-        const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-        const t = pct * state.duration;
+        const pct = seekFraction(ev.clientX, rect.left, rect.width);
+        const t = seekTimeFor(pct, state.duration);
+        if (!isDragging || t === null) return;
         // Update visual immediately during drag
         $('#scrubberFill').style.width = `${pct * 100}%`;
         $('#scrubberThumb').style.left = `${pct * 100}%`;
@@ -617,8 +634,8 @@ import {
         document.removeEventListener('mouseup', onUp);
         if (state.duration) {
           const rect = scrubber.getBoundingClientRect();
-          const pct = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
-          api.player.seek(pct * state.duration).catch(() => {});
+          const t = seekTimeFor(seekFraction(ev.clientX, rect.left, rect.width), state.duration);
+          if (t !== null) api.player.seek(t).catch(() => {});
         }
       };
       document.addEventListener('mousemove', onMove);
@@ -632,7 +649,7 @@ import {
 
     let volRaf: number | null = null;
     const applyVol = (vol: number) => {
-      state.volume = Math.max(0, Math.min(100, Math.round(vol)));
+      state.volume = clampVolume(vol);
       if (state.volume > 0) state.lastVolume = state.volume;
       if (volSlider) volSlider.value = String(state.volume);
       updateVolumeSliderBg();
@@ -649,19 +666,15 @@ import {
 
     // Volume button: mute toggle
     btnVolume.addEventListener('click', () => {
-      if (state.volume > 0) {
-        state.lastVolume = state.volume;
-        applyVol(0);
-      } else {
-        applyVol(state.lastVolume || 80);
-      }
+      if (state.volume > 0) state.lastVolume = state.volume;
+      applyVol(muteToggleTarget(state.volume, state.lastVolume));
     });
 
     // Fare tekerleğiyle ses ayarı (+%5 / -%5)
     const onVolWheel = (e: WheelEvent) => {
       e.preventDefault();
       const delta = e.deltaY < 0 ? 5 : -5;
-      applyVol(state.volume + delta);
+      applyVol(volumeStepTo(state.volume, delta));
     };
     volSlider.addEventListener('wheel', onVolWheel, { passive: false });
     btnVolume.addEventListener('wheel', onVolWheel, { passive: false });
@@ -672,7 +685,7 @@ import {
     });
 
     // state.volume 0-100 aralığında olmalı; initial setVolume
-    api.player.setVolume(Math.max(0, Math.min(100, state.volume)) / 100).catch(() => {});
+    api.player.setVolume(clampVolume(state.volume) / 100).catch(() => {});
 
     // Gizli pencereden gelen metadata + playback state
     let _lastPollPlaying: boolean | null = null;
@@ -1291,9 +1304,9 @@ import {
   function toggleRepeat() {
     state.repeat = cycleRepeat(state.repeat);
     const btn = $('#btnRepeat');
-    btn.classList.toggle('active', state.repeat !== 'off');
+    btn.classList.toggle('active', isRepeatActive(state.repeat));
     api.store.set('repeat', state.repeat);
-    if (state.repeat === 'one') {
+    if (isRepeatOne(state.repeat)) {
       btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="14" text-anchor="middle" font-size="7" fill="currentColor" stroke="none" font-weight="bold">1</text></svg>';
     } else {
       btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
@@ -1303,31 +1316,24 @@ import {
 function updatePlayIcon() {
     const playIcon = $('#btnPlay .icon-play') as HTMLElement;
     const pauseIcon = $('#btnPlay .icon-pause') as HTMLElement;
-    const isPlaying = state.playing;
-    playIcon.style.display = isPlaying ? 'none' : 'block';
-    pauseIcon.style.display = isPlaying ? 'block' : 'none';
+    const vis = playIconVisibility(state.playing);
+    playIcon.style.display = vis.play;
+    pauseIcon.style.display = vis.pause;
   }
   
   // ── Like ───────────────────────────────────
   function toggleLike(id: string) {
     const song = findSong(id) || (state.currentSong?.id === id ? state.currentSong : undefined);
-    if (state.liked.has(id)) {
-      state.liked.delete(id);
-      delete state.likedSongsMap[id];
-    } else {
-      state.liked.add(id);
-      if (song) {
-        state.likedSongsMap[id] = song;
-        songRegistry.set(id, song);
-      }
-    }
+    const wasLiked = state.liked.has(id);
+    applyLikeToggle(state, id, song);
+    if (!wasLiked && song) songRegistry.set(id, song);
     saveLiked();
     updateLikeBtn();
     $$('.like-btn').forEach((btn) => {
       if ((btn as HTMLElement).dataset.id === id) {
         btn.classList.toggle('active', state.liked.has(id));
         const svg = btn.querySelector('svg');
-        if (svg) svg.setAttribute('fill', state.liked.has(id) ? 'currentColor' : 'none');
+        if (svg) svg.setAttribute('fill', likeFill(state.liked.has(id)));
       }
     });
     if (state.page === 'liked') loadLiked();
@@ -1339,7 +1345,7 @@ function updatePlayIcon() {
     const liked = state.liked.has(state.currentSong.id);
     btn.classList.toggle('active', liked);
     const svg = btn.querySelector('svg');
-    if (svg) svg.setAttribute('fill', liked ? 'currentColor' : 'none');
+    if (svg) svg.setAttribute('fill', likeFill(liked));
   }
 
   function saveLiked() {
@@ -2047,10 +2053,10 @@ function updatePlayIcon() {
     navigator.mediaSession.setActionHandler('previoustrack', () => prevSong());
     navigator.mediaSession.setActionHandler('nexttrack', () => nextSong());
     navigator.mediaSession.setActionHandler('seekbackward', () => {
-      if (state.duration) api.player.seek(Math.max(0, state.currentTime - 10)).catch(() => {});
+      if (state.duration) api.player.seek(clampSeekTarget(state.currentTime, -10, state.duration)).catch(() => {});
     });
     navigator.mediaSession.setActionHandler('seekforward', () => {
-      if (state.duration) api.player.seek(Math.min(state.duration, state.currentTime + 10)).catch(() => {});
+      if (state.duration) api.player.seek(clampSeekTarget(state.currentTime, 10, state.duration)).catch(() => {});
     });
   }
 
@@ -2067,7 +2073,7 @@ function updatePlayIcon() {
   function setupKeyboardShortcuts() {
     document.addEventListener('keydown', (e) => {
       // Don't trigger if typing in input
-      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+      if (isTypingTarget((e.target as HTMLElement).tagName)) return;
 
       switch (e.code) {
         case 'Space':
@@ -2079,8 +2085,7 @@ function updatePlayIcon() {
           if (e.ctrlKey) {
             prevSong();
           } else if (state.duration) {
-            const step = e.shiftKey ? 10 : 5;
-            api.player.seek(Math.max(0, state.currentTime - step)).catch(() => {});
+            api.player.seek(clampSeekTarget(state.currentTime, -keySeekStep(e.shiftKey), state.duration)).catch(() => {});
           }
           break;
         case 'ArrowRight':
@@ -2088,13 +2093,12 @@ function updatePlayIcon() {
           if (e.ctrlKey) {
             nextSong();
           } else if (state.duration) {
-            const step = e.shiftKey ? 10 : 5;
-            api.player.seek(Math.min(state.duration, state.currentTime + step)).catch(() => {});
+            api.player.seek(clampSeekTarget(state.currentTime, keySeekStep(e.shiftKey), state.duration)).catch(() => {});
           }
           break;
         case 'ArrowUp':
           e.preventDefault();
-          state.volume = Math.min(100, state.volume + 5);
+          state.volume = volumeStepTo(state.volume, 5);
           if (state.volume > 0) state.lastVolume = state.volume;
           updateVolumeSliderBg();
           api.player.setVolume(state.volume / 100).catch(() => {});
@@ -2102,7 +2106,7 @@ function updatePlayIcon() {
           break;
         case 'ArrowDown':
           e.preventDefault();
-          state.volume = Math.max(0, state.volume - 5);
+          state.volume = volumeStepTo(state.volume, -5);
           if (state.volume > 0) state.lastVolume = state.volume;
           updateVolumeSliderBg();
           api.player.setVolume(state.volume / 100).catch(() => {});
