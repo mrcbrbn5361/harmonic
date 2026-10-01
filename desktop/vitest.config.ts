@@ -7,7 +7,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],
-      include: ['src/renderer/components/queue.ts'],
+      include: ['src/renderer/components/queue.ts', 'src/renderer/components/player.ts'],
     },
   },
 });

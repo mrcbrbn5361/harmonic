@@ -21,6 +21,14 @@ import {
   getNextIndex,
   getPrevIndex
 } from './queue';
+import {
+  applyPreparePlay,
+  applyToggleShuffle,
+  cycleRepeat,
+  filterRadioItems,
+  applyAppendRadioItems,
+  decideTrackEnded
+} from './player';
 
   // ── API Bridge ─────────────────────────────
   const api = (window as any).api;
@@ -1003,27 +1011,11 @@ import {
       requestedId = song.id;
     }
 
-    // Queue index'i hemen güncelle (await öncesi) — sonraki/önceki doğru çalışsın
-    const idx = state.queue.findIndex((s) => s.id === song.id);
-    if (idx !== -1) {
-      state.queueIndex = idx;
-    } else {
-      state.queue.push(song as QueueItem);
-      state.queueIndex = state.queue.length - 1;
-    }
-
-    // History'ye ekle (max 50)
-    if (state.currentSong && state.currentSong.id !== song.id) {
-      state.history = [state.currentSong, ...state.history.filter((s) => s.id !== song.id)].slice(0, 50);
-    }
-
-    state.currentSong = song as QueueItem;
+    // Queue index/history/recent — saf mantık player.ts'tedir
+    applyPreparePlay(state, song);
     state.currentTime = 0;
     state.duration = song.duration || 0;
     lastPlayRequestAt = Date.now();
-
-    // Add to recently played
-    state.recentlyPlayed = [song, ...state.recentlyPlayed.filter((s) => s.id !== song.id)].slice(0, 100);
 
     // Update UI
     $('#playerTitle').textContent = song.title;
@@ -1355,11 +1347,10 @@ import {
     try {
       const res = await api.youtube.next(song.id);
       if (res?.items?.length) {
-        const nextItems = res.items.filter((s: Song) => s.id !== song.id);
+        const nextItems = filterRadioItems(res.items, song.id);
         if (nextItems.length) {
           nextItems.forEach((s: Song) => songRegistry.set(s.id, s));
-          state.contextQueue.push(...(nextItems as QueueItem[]));
-          state.queue = rebuildMergedQueue();
+          applyAppendRadioItems(state, nextItems);
           const targetSong = nextItems[0];
           const nextIdx = state.queue.findIndex((s) => s.id === targetSong.id);
           if (nextIdx !== -1) {
@@ -1383,11 +1374,10 @@ import {
       const res = await api.youtube.next(song.id);
       if (res?.items?.length) {
         const existingIds = new Set(state.queue.map(s => s.id));
-        const newItems = res.items.filter((s: Song) => !existingIds.has(s.id));
+        const newItems = filterRadioItems(res.items, song.id, existingIds);
         if (newItems.length) {
           newItems.forEach((s: Song) => songRegistry.set(s.id, s));
-          state.contextQueue.push(...(newItems as QueueItem[]));
-          state.queue = rebuildMergedQueue();
+          applyAppendRadioItems(state, newItems);
           if (state.panelOpen === 'queue') renderQueue();
           syncBotServerAndLivePreview(state.currentSong?.title, state.currentSong?.artist, state.currentSong?.thumbnail);
         }
@@ -1419,7 +1409,12 @@ import {
       return;
     }
     const autoPlay = await api.store.get('autoPlay').catch(() => true);
-    if (autoPlay === false && state.repeat === 'off' && state.queueIndex >= state.queue.length - 1) {
+    const decision = decideTrackEnded(state, autoPlay);
+    if (decision === 'repeat-one') {
+      playSong(state.currentSong);
+      return;
+    }
+    if (decision === 'stop') {
       state.playing = false;
       updatePlayIcon();
       return;
@@ -1428,19 +1423,13 @@ import {
   }
 
   function toggleShuffle() {
-    state.shuffle = !state.shuffle;
-    if (state.shuffle) {
-      state.shuffleOrder = FisherYatesShuffle(state.queue.map((_, i) => i));
-    } else {
-      state.shuffleOrder = [];
-    }
+    applyToggleShuffle(state);
     $('#btnShuffle').classList.toggle('active', state.shuffle);
     api.store.set('shuffle', state.shuffle);
   }
 
   function toggleRepeat() {
-    const modes: Array<'off' | 'all' | 'one'> = ['off', 'all', 'one'];
-    state.repeat = modes[(modes.indexOf(state.repeat) + 1) % 3];
+    state.repeat = cycleRepeat(state.repeat);
     const btn = $('#btnRepeat');
     btn.classList.toggle('active', state.repeat !== 'off');
     api.store.set('repeat', state.repeat);
