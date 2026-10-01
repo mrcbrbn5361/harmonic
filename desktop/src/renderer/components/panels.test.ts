@@ -20,6 +20,9 @@ import {
   buildQueueHtml,
   queueIndexAfterUserPick,
   resolveContextQueuePick,
+  PLAYLIST_PICKER_EMPTY_HTML,
+  playlistHasSong,
+  buildPlaylistPickerListHtml,
 } from './panels';
 
 function mkItem(over: Partial<QueueItem> = {}): QueueItem {
@@ -178,5 +181,33 @@ describe('queue seçim kararları', () => {
     const up = [mkItem({ id: 'c1' }), mkItem({ id: 'c2' })];
     expect(resolveContextQueuePick(up, 1)?.id).toBe('c2');
     expect(resolveContextQueuePick(up, 5)).toBeUndefined();
+  });
+});
+
+describe('addToPlaylist modal (openAddToPlaylistModal saf kısmı)', () => {
+  it('liste yoksa ipucu görünümü döner', () => {
+    expect(PLAYLIST_PICKER_EMPTY_HTML).toContain('Henüz bir çalma listesi oluşturmadınız.');
+    expect(buildPlaylistPickerListHtml([], 's1')).toBe(PLAYLIST_PICKER_EMPTY_HTML);
+  });
+  it('satırlar pl-id/isim/sayısı taşır, kaçırır ve beğeni dalını seçer', () => {
+    const html = buildPlaylistPickerListHtml(
+      [
+        { id: 'pl<x>', name: 'Listem <b>', songs: [{ id: 's1' }] },
+        { id: 'pl2', name: 'Diğer', songs: undefined },
+      ],
+      's1',
+    );
+    expect(html).toContain('data-pl-id="pl&lt;x&gt;"');
+    expect(html).toContain('Listem &lt;b&gt;');
+    expect(html).toContain('1 şarkı');
+    expect(html).toContain('0 şarkı');
+    expect(html).toContain('✓ Eklendi');
+    expect(html).toContain('+ Ekle');
+  });
+  it('playlistHasSong: kayıtlıysa true, songs boş/undefined ise false', () => {
+    expect(playlistHasSong([{ id: 's1' }], 's1')).toBe(true);
+    expect(playlistHasSong([{ id: 's1' }], 's2')).toBe(false);
+    expect(playlistHasSong([], 's1')).toBe(false);
+    expect(playlistHasSong(undefined, 's1')).toBe(false);
   });
 });

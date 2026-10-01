@@ -88,6 +88,7 @@ import {
   clampMenuPos,
   copyLinkFor,
   buildLyricsHtml,
+  buildPlaylistPickerListHtml,
   parseSeekTime,
   shouldSyncLyric,
   hasLyricChanged,
@@ -1559,25 +1560,7 @@ function updatePlayIcon() {
     const playlists: any[] = await api.store.get('playlists') || [];
 
     function renderList() {
-      if (!playlists.length) {
-        listEl.innerHTML = '<div class="empty-hint" style="padding:16px;text-align:center;color:var(--c-text-2)">Henüz bir çalma listesi oluşturmadınız.</div>';
-        return;
-      }
-      listEl.innerHTML = playlists.map((pl) => {
-        const hasSong = (pl.songs || []).some((s: any) => s.id === song.id);
-        return `
-          <button class="btn btn-ghost" data-pl-id="${escapeHtml(pl.id)}" style="width:100%;justify-content:space-between;padding:10px 12px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);cursor:pointer;display:flex;align-items:center;">
-            <div style="display:flex;align-items:center;gap:10px;text-align:left;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-              <div>
-                <div style="font-weight:600;font-size:13px;color:var(--c-text-0)">${escapeHtml(pl.name)}</div>
-                <div style="font-size:11px;color:var(--c-text-2)">${(pl.songs || []).length} şarkı</div>
-              </div>
-            </div>
-            <span style="font-size:12px;font-weight:600;color:${hasSong ? 'var(--c-accent)' : 'var(--c-text-2)'}">${hasSong ? '✓ Eklendi' : '+ Ekle'}</span>
-          </button>
-        `;
-      }).join('');
+      listEl.innerHTML = buildPlaylistPickerListHtml(playlists, song.id);
 
       listEl.querySelectorAll('[data-pl-id]').forEach((btn) => {
         btn.addEventListener('click', async () => {
