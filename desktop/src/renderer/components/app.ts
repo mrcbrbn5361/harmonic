@@ -95,6 +95,22 @@ import {
   queueIndexAfterUserPick,
   resolveContextQueuePick,
 } from './panels';
+import {
+  SEARCH_DEBOUNCE_MS,
+  normalizeQuery,
+  isEmptyQuery,
+  shouldSuggestSearch,
+  shouldDirectSearch,
+  shouldClearOnEmpty,
+  nextSearchId,
+  isStaleSearch,
+  buildSearchCache,
+  hasAnyResults,
+  isSearchSectionVisible,
+  normalizeSearchFilter,
+  resolveNavLoader,
+  nextNavGeneration,
+} from './search-nav';
 
   // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -274,16 +290,17 @@ import {
   // ── Navigation ─────────────────────────────
   function navigateTo(page: string) {
     state.page = page;
-    state.navGeneration++;
+    state.navGeneration = nextNavGeneration(state.navGeneration);
     $$('.nav-link').forEach((l) => {
       l.classList.toggle('active', (l as HTMLElement).dataset.page === page);
     });
     $$('.page').forEach((p) => {
       (p as HTMLElement).classList.toggle('active', (p as HTMLElement).dataset.page === page);
     });
-    if (page === 'home') loadHome();
-    if (page === 'library') loadLibrary();
-    if (page === 'liked') loadLiked();
+    const loader = resolveNavLoader(page);
+    if (loader === 'home') loadHome();
+    if (loader === 'library') loadLibrary();
+    if (loader === 'liked') loadLiked();
   }
 
   function setupNav() {
@@ -307,10 +324,10 @@ import {
 
     input.addEventListener('input', () => {
       clear.classList.toggle('visible', input.value.length > 0);
-      const query = input.value.trim();
+      const query = normalizeQuery(input.value);
 
       // Anlık arama - 1 karakterden itibaren
-      if (query.length >= 1) {
+      if (shouldSuggestSearch(query)) {
         if (searchTimer) clearTimeout(searchTimer);
         searchTimer = setTimeout(async () => {
           // Önce önerileri göster
@@ -333,15 +350,15 @@ import {
           }
 
           // Aynı zamanda doğrudan sonuçları da göster
-          if (query.length >= 2) {
+          if (shouldDirectSearch(query)) {
             lastSearchQuery = query;
             doSearch(query);
           }
-        }, 200); // 200ms debounce
+        }, SEARCH_DEBOUNCE_MS); // 200ms debounce
       } else {
         hide(dropdown);
         // Input temizlendiğinde sonuçları da temizle
-        if (query.length === 0) {
+        if (shouldClearOnEmpty(query)) {
           $('#searchResults').innerHTML = `
             <div class="empty-state">
               <div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
@@ -366,8 +383,8 @@ import {
     });
 
     input.addEventListener('focus', () => {
-      const query = input.value.trim();
-      if (query.length >= 1 && dropdown.children.length > 0) {
+      const query = normalizeQuery(input.value);
+      if (shouldSuggestSearch(query) && dropdown.children.length > 0) {
         show(dropdown);
       }
     });
@@ -393,7 +410,7 @@ import {
       chip.addEventListener('click', () => {
         $$('.chip').forEach((c) => c.classList.remove('active'));
         chip.classList.add('active');
-        state.searchFilter = (chip as HTMLElement).dataset.filter as any || 'all';
+        state.searchFilter = normalizeSearchFilter((chip as HTMLElement).dataset.filter);
         lastSearchQuery = '';
         if (input.value) doSearch(input.value);
       });
@@ -403,22 +420,20 @@ import {
   let activeSearchId = 0;
 
   async function doSearch(query: string) {
-    if (!query.trim()) return;
-    const searchId = ++activeSearchId;
+    if (isEmptyQuery(query)) return;
+    activeSearchId = nextSearchId(activeSearchId);
+    const searchId = activeSearchId;
     const container = $('#searchResults');
     container.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Aranıyor...</p></div>';
 
     try {
       dlog('doSearch:', query);
       const results = await ytSearch(query);
-      if (searchId !== activeSearchId) return; // Eski istek, ezilmesin
+      if (isStaleSearch(searchId, activeSearchId)) return; // Eski istek, ezilmesin
       // Sonuçları cache'le (tıklama için)
-      state.lastSearchResults = [
-        ...(results.songs || []),
-        ...(results.videos || [])
-      ];
+      state.lastSearchResults = buildSearchCache(results);
 
-      if (!results.songs?.length && !results.videos?.length && !results.albums?.length) {
+      if (!hasAnyResults(results)) {
         container.innerHTML = '<div class="empty-state"><p class="empty-text">Sonuç bulunamadı</p></div>';
         return;
       }
@@ -427,17 +442,17 @@ import {
       const filter = state.searchFilter;
 
       // Şarkılar
-      if (results.songs?.length && (filter === 'all' || filter === 'songs')) {
+      if (results.songs?.length && isSearchSectionVisible(filter, 'songs')) {
         html += `<div class="song-list">${results.songs.map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div>`;
       }
 
       // Videolar
-      if (results.videos?.length && (filter === 'all' || filter === 'videos')) {
+      if (results.videos?.length && isSearchSectionVisible(filter, 'videos')) {
         html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Videolar</h3><div class="song-list">${results.videos.map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div></div>`;
       }
 
       // Albümler
-      if (results.albums?.length && (filter === 'all' || filter === 'albums')) {
+      if (results.albums?.length && isSearchSectionVisible(filter, 'albums')) {
         html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3><div class="card-grid">${results.albums.map((a: any) => `
           <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
             <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
@@ -447,7 +462,7 @@ import {
       }
 
       // Sanatçılar
-      if (results.artists?.length && (filter === 'all' || filter === 'artists')) {
+      if (results.artists?.length && isSearchSectionVisible(filter, 'artists')) {
         html += `<div style="margin-top:24px"><h3 style="font-size:16px;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3><div class="card-grid">${results.artists.map((a: any) => `
           <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
             <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
