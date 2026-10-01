@@ -58,6 +58,13 @@ import {
   confirmDialog,
   closePanels as closePanelsImpl
 } from './ui-feedback';
+import {
+  buildSongRow,
+  findSongIn,
+  isHomeOrSearchContext,
+  filterRadioRecs,
+  buildPlaybackContext,
+} from './song-row';
 
   // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -441,24 +448,11 @@ import {
     if (song?.id) {
       songRegistry.set(song.id, song);
     }
-    const isPlaying = state.currentSong?.id === song.id;
-    const isLiked = state.liked.has(song.id);
-    const subtitle = song.album ? `${escapeHtml(song.artist)} · ${escapeHtml(song.album)}` : escapeHtml(song.artist);
-    return `
-      <div class="song-row${isPlaying ? ' playing' : ''}" data-id="${escapeHtml(song.id)}">
-        ${num != null ? `<span class="song-num">${num}</span>` : ''}
-        <img class="song-thumb" src="${escapeHtml(song.thumbnail)}" alt="" loading="lazy" onerror="this.style.display='none'">
-        <div class="song-meta">
-          <div class="song-title">${escapeHtml(song.title)}</div>
-          <div class="song-artist">${subtitle}</div>
-        </div>
-        <span class="song-dur">${formatTime(song.duration)}</span>
-        <div class="song-actions">
-          <button class="icon-btn like-btn${isLiked ? ' active' : ''}" data-id="${escapeHtml(song.id)}">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="${isLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.8"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
-          </button>
-        </div>
-      </div>`;
+    return buildSongRow(song, {
+      isPlaying: state.currentSong?.id === song.id,
+      isLiked: state.liked.has(song.id),
+      num,
+    });
   }
 
   function attachSongEvents(container: HTMLElement, contextName?: string, contextType?: QueueContext['type']) {
@@ -471,7 +465,11 @@ import {
           // ARAMA VEYA ANA SAYFA ÖNERİLERİ KONTROLÜ:
           // Arama sonuçlarından veya ana sayfa önerilerinden bir şarkıya tıklandığında,
           // kullanıcının arayüz listesiyle sınırlı kalması engellenir. Parçaya özel kesintisiz radyo başlatılır.
-          const isHomeOrSearch = contextType === 'radio' || !!container.closest('#searchResults') || !!container.closest('#homeContent') || state.page === 'search' || state.page === 'home';
+          const isHomeOrSearch = isHomeOrSearchContext(contextType, {
+            inSearchResults: !!container.closest('#searchResults'),
+            inHomeContent: !!container.closest('#homeContent'),
+            page: state.page,
+          });
           if (isHomeOrSearch) {
             setContext([song as QueueItem], `${song.title} Radyosu`, 'radio');
             state.queueIndex = state.userQueue.length;
@@ -479,7 +477,7 @@ import {
             // Şarkıya ait radyo parçalarını arka planda çek ve kuyruğa ekle
             api.youtube.next(song.id).then((res: any) => {
               if (res?.items?.length && state.currentSong?.id === song.id) {
-                const recs = res.items.filter((s: Song) => s.id !== song.id) as QueueItem[];
+                const recs = filterRadioRecs(res.items, song.id);
                 recs.forEach((s) => songRegistry.set(s.id, s));
                 state.contextQueue = [song as QueueItem, ...recs];
                 state.queue = rebuildMergedQueue();
@@ -492,15 +490,11 @@ import {
 
           // Normal albüm / çalma listesi / kitaplık bağlamı
           const allRows = container.querySelectorAll('.song-row[data-id]');
-          const contextSongs: QueueItem[] = [];
-          let clickedIdx = 0;
+          const rowIds: Array<string | undefined> = [];
           allRows.forEach((r) => {
-            const s = findSong((r as HTMLElement).dataset.id);
-            if (s) {
-              if (s.id === id) clickedIdx = contextSongs.length;
-              contextSongs.push(s as QueueItem);
-            }
+            rowIds.push((r as HTMLElement).dataset.id);
           });
+          const { songs: contextSongs, clickedIdx } = buildPlaybackContext(rowIds, findSong, id);
           const cName = contextName || state.contextName || 'Liste';
           const cType = contextType || state.contextType || 'playlist';
           if (contextSongs.length) {
@@ -533,14 +527,17 @@ import {
   }
 
   function findSong(id: string | undefined): Song | QueueItem | undefined {
-    if (!id) return undefined;
-    if (state.currentSong?.id === id) return state.currentSong;
-    if (songRegistry.has(id)) return songRegistry.get(id);
-    const inQueue = state.queue.find((s) => s.id === id);
-    if (inQueue) return inQueue;
-    const inLiked = state.likedSongsMap[id];
-    if (inLiked) return inLiked;
-    return state.lastSearchResults.find((s) => s.id === id);
+    return findSongIn(
+      {
+        currentSong: state.currentSong,
+        registryHas: (key: string) => songRegistry.has(key),
+        registryGet: (key: string) => songRegistry.get(key),
+        queue: state.queue,
+        likedMap: state.likedSongsMap,
+        lastSearchResults: state.lastSearchResults,
+      },
+      id,
+    );
   }
 
   function updateVolumeSliderBg() {

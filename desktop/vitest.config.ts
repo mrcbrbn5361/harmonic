@@ -13,6 +13,7 @@ export default defineConfig({
         'src/renderer/components/api-client.ts',
         'src/renderer/components/views.ts',
         'src/renderer/components/ui-feedback.ts',
+        'src/renderer/components/song-row.ts',
       ],
     },
   },
