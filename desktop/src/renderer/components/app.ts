@@ -38,58 +38,22 @@ import {
   ytSuggestions,
   ytLyrics
 } from './api-client';
+import {
+  escapeHtml,
+  formatTime,
+  parseLRC,
+  sanitizeName,
+  findActiveLyricIndex,
+  resolveDisplayName,
+  toHiResAvatar,
+  getAvatarInitial,
+  getUpcomingContext,
+  type LyricLine
+} from './views';
 
-  // ── Helpers ────────────────────────────────
+  // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
   const $$ = (sel: string) => document.querySelectorAll(sel);
-
-  function escapeHtml(str: any): string {
-    if (str === null || str === undefined) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  function formatTime(sec: number, padMinutes = false): string {
-    if (sec === undefined || sec === null || isNaN(sec) || sec < 0) return padMinutes ? '00:00' : '0:00';
-    const m = Math.floor(sec / 60);
-    const s = Math.floor(sec % 60);
-    const mStr = padMinutes ? String(m).padStart(2, '0') : String(m);
-    return `${mStr}:${s.toString().padStart(2, '0')}`;
-  }
-
-  interface LyricLine {
-    time: number;
-    text: string;
-  }
-
-  function parseLRC(lrcText: string): LyricLine[] {
-    if (!lrcText) return [];
-    const lines = lrcText.split('\n');
-    const result: LyricLine[] = [];
-    const timeRegex = /\[(\d{1,2}):(\d{2})(?:\.(\d{1,3}))?\]/g;
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      const matches = [...line.matchAll(timeRegex)];
-      if (matches.length > 0) {
-        const text = line.replace(timeRegex, '').trim();
-        for (const match of matches) {
-          const min = parseInt(match[1], 10);
-          const sec = parseInt(match[2], 10);
-          const msStr = match[3] || '0';
-          const ms = parseFloat(`0.${msStr}`);
-          const totalSeconds = min * 60 + sec + ms;
-          result.push({ time: totalSeconds, text });
-        }
-      }
-    }
-    return result.sort((a, b) => a.time - b.time);
-  }
 
   function FisherYatesShuffle(arr: number[]): number[] {
     return fisherYatesShuffleImpl(arr);
@@ -120,14 +84,7 @@ import {
   function hide(el: HTMLElement) { el.classList.remove('open', 'visible'); }
   function toggle(el: HTMLElement) { el.classList.contains('open') ? hide(el) : show(el); }
 
-  // ── Auth ──────────────────────────────────
-  function sanitizeName(name: string | undefined | null): string {
-    if (!name || typeof name !== 'string') return '';
-    const trimmed = name.trim();
-    if (trimmed.length <= 1) return '';
-    if (/^(guide|hamburger|menu|account|hesap|profil|open guide|rehber|kılavuz|youtube music)$/i.test(trimmed)) return '';
-    return trimmed;
-  }
+  // ── Auth (sanitizeName views.ts'tedir) ──
 
   async function checkAuthState() {
     try {
@@ -164,12 +121,12 @@ import {
       if (loginBtn) loginBtn.style.display = 'none';
       if (userInfo) {
         userInfo.style.display = 'flex';
-        const displayName = state.user.name && state.user.name.length > 1 ? state.user.name : (state.user.email ? state.user.email.split('@')[0] : state.user.name);
+        const displayName = resolveDisplayName(state.user);
         if (userName) userName.textContent = displayName;
         if (userEmail) userEmail.textContent = state.user.email;
         if (userAvatar) {
           if (state.user.picture) {
-            const hiRes = state.user.picture.replace(/=s\d+/, '=s200').replace(/=w\d+.*/, '=s200-c-k-c0x00ffffff-no-rj');
+            const hiRes = toHiResAvatar(state.user.picture);
             userAvatar.style.backgroundImage = `url("${hiRes}")`;
             userAvatar.style.backgroundSize = 'cover';
             userAvatar.style.backgroundPosition = 'center';
@@ -179,7 +136,7 @@ import {
           } else if (avatarText && state.user.name) {
             userAvatar.style.backgroundImage = 'none';
             avatarText.style.display = 'block';
-            avatarText.textContent = state.user.name.charAt(0).toUpperCase();
+            avatarText.textContent = getAvatarInitial(state.user.name);
           }
         }
       }
@@ -1700,14 +1657,7 @@ function updatePlayIcon() {
 
   function syncActiveLyric(curTime: number) {
     if (!currentParsedLyrics.length || state.panelOpen !== 'lyrics') return;
-    let activeIdx = -1;
-    for (let i = 0; i < currentParsedLyrics.length; i++) {
-      if (currentParsedLyrics[i].time <= curTime + 0.3) {
-        activeIdx = i;
-      } else {
-        break;
-      }
-    }
+    const activeIdx = findActiveLyricIndex(currentParsedLyrics, curTime);
 
     if (activeIdx !== lastActiveLyricIdx) {
       lastActiveLyricIdx = activeIdx;
@@ -1761,8 +1711,7 @@ function updatePlayIcon() {
     // Bağlam şarkıları (çalma listesi/albumden gelen)
     if (state.contextQueue.length) {
       const contextLabel = state.contextName || 'Bağlam';
-      const currentCtxIdx = state.contextQueue.findIndex((s) => s.id === state.currentSong?.id);
-      const upcomingCtx = currentCtxIdx >= 0 ? state.contextQueue.slice(currentCtxIdx + 1) : state.contextQueue;
+      const upcomingCtx = getUpcomingContext(state.contextQueue, state.currentSong?.id);
       if (upcomingCtx.length) {
         html += `<div>
           <h4 style="font-size:13px;font-weight:600;color:var(--c-text-2);margin-bottom:8px">${escapeHtml(contextLabel)}</h4>
@@ -1806,8 +1755,7 @@ function updatePlayIcon() {
           }
         } else if (type === 'context') {
           // idx dilimlenmiş upcomingCtx'e ait — tam dizinden değil dilimden oku
-          const currentCtxIdx = state.contextQueue.findIndex((s) => s.id === state.currentSong?.id);
-          const upcomingCtx = currentCtxIdx >= 0 ? state.contextQueue.slice(currentCtxIdx + 1) : state.contextQueue;
+          const upcomingCtx = getUpcomingContext(state.contextQueue, state.currentSong?.id);
           const song = upcomingCtx[idx];
           if (song) {
             state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
