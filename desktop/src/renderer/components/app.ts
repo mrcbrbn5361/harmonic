@@ -111,6 +111,38 @@ import {
   resolveNavLoader,
   nextNavGeneration,
 } from './search-nav';
+import {
+  HOME_CARDS_LIMIT,
+  HOME_SONGS_LIMIT,
+  HOME_QUEUE_LIMIT,
+  RECENT_SONGS_LIMIT,
+  BROWSE_EMPTY_HTML,
+  LIBRARY_ERROR_HTML,
+  LIBRARY_EMPTY_HTML,
+  partitionSongs,
+  partitionBrowseCards,
+  takeFirst,
+  shouldInitHomeQueue,
+  isStaleContent,
+  buildMediaCard,
+  buildCardFor,
+  buildDiscoverSection,
+  buildSongSection,
+  resolveHomeHtml,
+  resolveBrowseContainerId,
+  resolveBrowseBack,
+  buildBrowseHeader,
+  buildBrowseSongsBody,
+  buildBrowseCardsBody,
+  normalizeLibraryTab,
+  shouldShowRecentSection,
+  shouldShowPlaylistSection,
+  shouldShowAlbumSection,
+  shouldShowArtistsSection,
+  resolveLibraryEmpty,
+  resolveLocalLiked,
+  buildLikedHtml,
+} from './content';
 
   // ── Helpers (saf görünüm mantığı views.ts'tedir) ──
   const $ = (sel: string) => document.querySelector(sel) as HTMLElement;
@@ -1700,7 +1732,7 @@ function updatePlayIcon() {
 
     try {
     const data = await ytHome();
-    if (gen !== state.navGeneration) return; // stale, discard
+    if (isStaleContent(gen, state.navGeneration)) return; // stale, discard
     console.log('[Harmonic] Home data:', JSON.stringify({ itemCount: data?.items?.length }));
     console.log('[Harmonic] Home first item:', data?.items?.[0] ? JSON.stringify(data.items[0]) : 'null');
 
@@ -1710,37 +1742,27 @@ function updatePlayIcon() {
       return;
     }
 
-    const songs = data.items.filter((i: any) => i.id) as Song[];
-    const cards = data.items.filter((i: any) => i.browseId);
+    const songs = partitionSongs(data.items ?? []) as Song[];
+    const cards = partitionBrowseCards(data.items ?? []);
 
     console.log('[Harmonic] Songs:', songs.length, 'Cards:', cards.length);
 
     let html = '';
 
-    if (cards.length) {
-      html += `<div style="margin-bottom:32px">
-        <h2 style="font-size:18px;font-weight:700;margin-bottom:16px;color:var(--c-text-0)">Keşfet</h2>
-        <div class="card-grid">${cards.slice(0, 8).map((c: any) => `
-          <div class="card" data-browse="${escapeHtml(c.browseId)}" style="cursor:pointer">
-            <img class="card-thumb" src="${escapeHtml(c.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${escapeHtml(c.title || c.name || '')}</div>
-            <div class="card-sub">${escapeHtml(c.artist || '')}</div>
-          </div>`).join('')}</div>
-      </div>`;
+    const topCards = takeFirst(cards, HOME_CARDS_LIMIT);
+    if (topCards.length) {
+      html += buildDiscoverSection(topCards.map((c: any) => buildCardFor(c, String(c.artist || ''))).join(''));
     }
 
     if (songs.length) {
-      html += `<div>
-        <h2 style="font-size:18px;font-weight:700;margin-bottom:16px;color:var(--c-text-0)">Önerilen Şarkılar</h2>
-        <div class="song-list">${songs.slice(0, 10).map((s: Song, i: number) => songRow(s, i + 1)).join('')}</div>
-      </div>`;
+      html += buildSongSection('Önerilen Şarkılar', takeFirst(songs, HOME_SONGS_LIMIT).map((s: Song, i: number) => songRow(s, i + 1)).join(''));
     }
 
-    container.innerHTML = html || '<div class="empty-state"><p class="empty-text">İçerik bulunamadı</p></div>';
+    container.innerHTML = resolveHomeHtml(html);
 
     // Set queue from songs — sadece şarkı çalmıyorsa VE kuyruk boşsa queue'yu güncelle
-    if (songs.length && !state.currentSong && !state.queue.length) {
-      setContext(songs.slice(0, 30), 'Önerilen Şarkılar', 'home');
+    if (shouldInitHomeQueue(songs.length, !!state.currentSong, state.queue.length)) {
+      setContext(takeFirst(songs, HOME_QUEUE_LIMIT), 'Önerilen Şarkılar', 'home');
     }
 
     attachSongEvents(container);
@@ -1763,52 +1785,40 @@ function updatePlayIcon() {
 
   async function openBrowse(browseId: string, fallbackTitle?: string, fallbackThumb?: string, onBack?: () => void) {
     const activePage = state.page;
-    const targetContainer = activePage === 'search' ? $('#searchResults') : (activePage === 'library' ? $('#libraryContent') : $('#homeContent'));
+    const targetContainer = $(`#${resolveBrowseContainerId(activePage)}`);
     if (!targetContainer) return;
 
     targetContainer.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
     try {
       const browseData = await api.youtube.browse(browseId);
       const items: any[] = browseData.items || [];
-      const songs = items.filter((i: any) => i.id) as Song[];
+      const songs = partitionSongs(items) as Song[];
       const title = browseData.title || fallbackTitle || 'Liste';
       const thumb = fallbackThumb || '';
 
-      let html = `<button id="btnBrowseBack" class="btn btn-ghost" style="margin-bottom:16px;display:flex;align-items:center;gap:6px">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Geri
-      </button>
-      <div style="display:flex;gap:16px;align-items:center;margin-bottom:20px;flex-wrap:wrap">
-        ${thumb ? `<img src="${escapeHtml(thumb)}" style="width:96px;height:96px;border-radius:12px;object-fit:cover" onerror="this.style.display='none'">` : ''}
-        <div>
-          <h2 style="font-size:22px;font-weight:700;margin:0 0 4px">${escapeHtml(title)}</h2>
-          <p style="margin:0;color:var(--c-text-2);font-size:13px">${songs.length ? `${songs.length} şarkı` : ''}</p>
-        </div>
-      </div>`;
+      let html = buildBrowseHeader(title, thumb, songs.length);
 
       if (songs.length) {
-        html += `<div class="song-list">${songs.map((s, i) => songRow(s, i + 1)).join('')}</div>`;
+        html += buildBrowseSongsBody(songs.map((s, i) => songRow(s, i + 1)).join(''));
         setContext(songs, title, 'playlist');
       } else if (items.length) {
-        const cards = items.filter((i: any) => i.browseId);
-        html += `<div class="card-grid">${cards.map((c: any) => `
-          <div class="card" data-browse="${escapeHtml(c.browseId)}" style="cursor:pointer">
-            <img class="card-thumb" src="${escapeHtml(c.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${escapeHtml(c.title || c.name || '')}</div>
-            <div class="card-sub">${escapeHtml(c.artist || '')}</div>
-          </div>`).join('')}</div>`;
+        const cards = partitionBrowseCards(items);
+        html += buildBrowseCardsBody(cards.map((c: any) => buildCardFor(c, String(c.artist || ''))).join(''));
       } else {
-        html += `<div class="empty-state"><p class="empty-text">İçerik bulunamadı</p></div>`;
+        html += BROWSE_EMPTY_HTML;
       }
 
       targetContainer.innerHTML = html;
       attachSongEvents(targetContainer, title, 'playlist');
 
       targetContainer.querySelector('#btnBrowseBack')?.addEventListener('click', () => {
-        if (onBack) onBack();
-        else if (activePage === 'search') {
+        const backTarget = resolveBrowseBack(!!onBack, activePage);
+        if (backTarget === 'callback') {
+          onBack?.();
+        } else if (backTarget === 'search') {
           const q = ($('#searchInput') as HTMLInputElement)?.value;
           if (q) doSearch(q);
-        } else if (activePage === 'library') {
+        } else if (backTarget === 'library') {
           loadLibrary();
         } else {
           loadHome();
@@ -1861,23 +1871,20 @@ function updatePlayIcon() {
       }
     }
 
-    if (gen !== state.navGeneration) return; // stale, discard
+    if (isStaleContent(gen, state.navGeneration)) return; // stale, discard
 
     let html = '';
-    const tab = state.libraryTab || 'recent';
+    const tab = normalizeLibraryTab(state.libraryTab);
 
     // 1. Son Çalınanlar
-    if (tab === 'recent' || tab === 'songs') {
+    if (shouldShowRecentSection(tab)) {
       if (localRecent.length) {
-        html += `<div style="margin-bottom:24px">
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">${tab === 'recent' ? 'Son Çalınanlar' : 'Kütüphane Şarkıları'}</h3>
-          <div class="song-list">${localRecent.slice(0, 30).map((s, i) => songRow(s, i + 1)).join('')}</div>
-        </div>`;
+        html += buildSongSection(tab === 'recent' ? 'Son Çalınanlar' : 'Kütüphane Şarkıları', takeFirst(localRecent, RECENT_SONGS_LIMIT).map((s, i) => songRow(s, i + 1)).join(''));
       }
     }
 
     // 2. Çalma Listeleri
-    if (tab === 'playlists') {
+    if (shouldShowPlaylistSection(tab)) {
       const localPlaylists = await api.store.get('playlists') || [];
       if (localPlaylists.length) {
         html += `<div style="margin-bottom:24px">
@@ -1896,49 +1903,35 @@ function updatePlayIcon() {
       if (ytPlaylists.length) {
         html += `<div style="margin-bottom:24px">
           <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">YouTube Music Listeleri</h3>
-          <div class="card-grid">${ytPlaylists.map(pl => `
-            <div class="card" data-browse="${escapeHtml(pl.browseId)}" style="cursor:pointer">
-              <img class="card-thumb" src="${escapeHtml(pl.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-              <div class="card-title">${escapeHtml(pl.title)}</div>
-            </div>`).join('')}</div>
+          <div class="card-grid">${ytPlaylists.map((pl: any) => buildMediaCard(pl.browseId, pl.thumbnail, pl.title)).join('')}</div>
         </div>`;
       }
     }
 
     // 3. Albümler
-    if (tab === 'albums') {
+    if (shouldShowAlbumSection(tab)) {
       if (ytAlbums.length) {
         html += `<div style="margin-bottom:24px">
           <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3>
-          <div class="card-grid">${ytAlbums.map(a => `
-            <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
-              <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-              <div class="card-title">${escapeHtml(a.title)}</div>
-              <div class="card-sub">${escapeHtml(a.artist || '')}</div>
-            </div>`).join('')}</div>
+          <div class="card-grid">${ytAlbums.map((a: any) => buildMediaCard(a.browseId, a.thumbnail, a.title, String(a.artist || ''))).join('')}</div>
         </div>`;
       }
     }
 
     // Sanatçılar (genel kütüphanede veya albümler/listeler yokken destekleyici)
-    if (ytArtists.length && tab === 'albums') {
+    if (shouldShowArtistsSection(ytArtists.length, tab)) {
       html += `<div style="margin-bottom:24px">
         <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3>
-        <div class="card-grid">${ytArtists.map(a => `
-          <div class="card" data-browse="${escapeHtml(a.browseId)}" style="cursor:pointer">
-            <img class="card-thumb" src="${escapeHtml(a.thumbnail)}" alt="" loading="lazy" onerror="this.style.background='var(--c-bg-3)'">
-            <div class="card-title">${escapeHtml(a.name)}</div>
-          </div>`).join('')}</div>
+        <div class="card-grid">${ytArtists.map((a: any) => buildMediaCard(a.browseId, a.thumbnail, a.name)).join('')}</div>
       </div>`;
     }
 
-    if (!html) {
-      if (libraryLoadError && state.isLoggedIn) {
-        container.innerHTML = '<div class="empty-state"><p class="empty-text">Kütüphane yüklenemedi</p><p class="empty-hint-text">YouTube Music verileri alınırken bir sorun oluştu</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+    const libraryEmptyKind = resolveLibraryEmpty(!!html, libraryLoadError, state.isLoggedIn);
+    if (libraryEmptyKind !== 'content') {
+      container.innerHTML = libraryEmptyKind === 'error' ? LIBRARY_ERROR_HTML : LIBRARY_EMPTY_HTML;
+      if (libraryEmptyKind === 'error') {
         container.querySelector('.btn-retry')?.addEventListener('click', () => loadLibrary());
-        return;
       }
-      container.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><p class="empty-text">Bu sekmede henüz içerik yok</p><p class="empty-hint-text">Müzik dinledikçe veya listeler oluşturdukça burada görünecek</p></div>';
       return;
     }
 
@@ -1988,38 +1981,15 @@ function updatePlayIcon() {
       } catch {}
     }
 
-    if (gen !== state.navGeneration) return; // stale, discard
+    if (isStaleContent(gen, state.navGeneration)) return; // stale, discard
 
-    let html = '';
-
-    // YouTube Music beğenilenleri
-    if (ytLiked.length) {
-      html += `<div style="margin-bottom:24px">
-        <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">YouTube Music Beğenilenler</h3>
-        <div class="song-list">${ytLiked.map((s, i) => songRow(s, i + 1)).join('')}</div>
-      </div>`;
-    }
+    const ytRows = ytLiked.length ? ytLiked.map((s, i) => songRow(s, i + 1)).join('') : '';
 
     // Yerel beğenilenler
-    if (localLikes.length) {
-      const localSongs = localLikes.map(id => {
-        return state.likedSongsMap[id] || songRegistry.get(id) || state.queue.find((s) => s.id === id) || state.recentlyPlayed.find((s) => s.id === id);
-      }).filter(Boolean) as Song[];
+    const localSongs = resolveLocalLiked(localLikes, (id) => state.likedSongsMap[id] || songRegistry.get(id) || state.queue.find((s) => s.id === id) || state.recentlyPlayed.find((s) => s.id === id));
+    const localRows = localSongs.length ? localSongs.map((s, i) => songRow(s as Song, i + 1)).join('') : '';
 
-      if (localSongs.length) {
-        html += `<div>
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Yerel Beğeniler</h3>
-          <div class="song-list">${localSongs.map((s, i) => songRow(s, i + 1)).join('')}</div>
-        </div>`;
-      }
-    }
-
-    if (!html) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg></div><p class="empty-text">Henüz beğeni yok</p><p class="empty-hint-text">Beğendiğiniz şarkılar burada görünecek</p></div>';
-      return;
-    }
-
-    container.innerHTML = html;
+    container.innerHTML = buildLikedHtml(ytRows, localRows);
     attachSongEvents(container, 'Beğenilen Şarkılar', 'playlist');
   }
 

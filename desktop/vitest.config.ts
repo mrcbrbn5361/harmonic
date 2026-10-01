@@ -17,6 +17,7 @@ export default defineConfig({
         'src/renderer/components/transport.ts',
         'src/renderer/components/panels.ts',
         'src/renderer/components/search-nav.ts',
+        'src/renderer/components/content.ts',
       ],
     },
   },
