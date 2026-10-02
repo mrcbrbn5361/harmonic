@@ -11,6 +11,7 @@ import {
   buildImportFailureText,
   buildImportExceptionText,
   normalizeUserName,
+  buildChromeImportModalHtml,
   MEDIA_SEEK_STEP,
   shouldHandleMediaSeek,
   buildMediaArtwork,
@@ -109,6 +110,26 @@ describe('auth / chrome import', () => {
   it('normalizes user name', () => {
     expect(normalizeUserName('Ada', 'Ada')).toBe('Ada');
     expect(normalizeUserName('  ', '')).toBe('');
+  });
+  it('builds chrome import modal (external found)', () => {
+    const html = buildChromeImportModalHtml(true);
+    expect(html).toContain('max-width:520px');
+    expect(html).toContain('Açık YouTube Music Hesabını Seç');
+    expect(html).toContain('Zaten YouTube Music açık');
+    expect(html).toContain('Harici Chrome hesabı bekleniyor...');
+    expect(html).toContain('Seçili Hesapla Giriş Yap');
+    expect(html).toContain('id="closeChromeImport"');
+    expect(html).toContain('id="cancelChromeImport"');
+    expect(html).toContain('id="doChromeImport"');
+    expect(html).toContain('id="importStatus"');
+  });
+  it('builds chrome import modal (fresh window)', () => {
+    const html = buildChromeImportModalHtml(false);
+    expect(html).toContain('Harmonic Giriş Penceresi Açıldı');
+    expect(html).toContain('YouTube Music giriş penceresi');
+    expect(html).toContain('Girişi Aktar');
+    expect(html).toContain('Pencere açık, giriş bekleniyor...');
+    expect(html).not.toContain('Zaten YouTube Music açık');
   });
 });
 

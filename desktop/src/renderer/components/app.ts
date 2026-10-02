@@ -157,13 +157,11 @@ import {
   isLoginOpenFailure,
   resolveLoginErrorText,
   hasExternalChrome,
-  resolveChromePromptTitle,
-  resolveChromeImportButtonLabel,
-  resolveChromeImportInitialStatus,
   buildImportSuccessText,
   buildImportFailureText,
   buildImportExceptionText,
   normalizeUserName,
+  buildChromeImportModalHtml,
   MEDIA_SEEK_STEP,
   shouldHandleMediaSeek,
   buildMediaArtwork,
@@ -347,29 +345,14 @@ import {
     }
   }
 
-  function showChromeImportPrompt(opened: any) {
+  function showChromeImportPrompt(opened: { externalFound?: unknown } | null | undefined) {
     const existing = document.getElementById('chromeImportModal');
     if (existing) existing.remove();
     const hasExt = hasExternalChrome(opened);
     const modal = document.createElement('div');
     modal.id = 'chromeImportModal';
     modal.className = 'modal-overlay visible';
-    modal.innerHTML = `
-      <div class="modal" style="max-width:520px">
-        <div class="modal-header">
-          <h3>${resolveChromePromptTitle(hasExt)}</h3>
-          <button class="icon-btn" id="closeChromeImport"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        </div>
-        <div class="modal-body" style="padding:16px 20px">
-          ${hasExt? `<div style="padding:10px;border-radius:8px;background:var(--c-bg-3);border:1px solid var(--c-border);margin-bottom:10px"><p style="margin:0;color:var(--c-text-1)"><strong>Zaten YouTube Music açık</strong>. Lütfen o tarayıcıda <strong>YouTube Music → sağ üst profil → Hesap değiştir</strong> ile istediğin hesaba geç, sonra buraya dönüp <strong>Girişi Aktar</strong>'a bas. Ayrı şifre ekranı açılmayacak.</p></div><p style="margin:0 0 8px;color:var(--c-text-2);font-size:12px">Not: İlk seferinde Harmonic giriş penceresi yerine mevcut Chrome'un kullanılacak, bu yüzden yeni şifre sormaz.</p>` : `<p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Ayrı bir <strong>YouTube Music giriş penceresi</strong> açıldı. Orada hesabınla giriş yap, ana sayfa yüklenince <strong>Girişi Aktar</strong>'a bas.</p>`}
-          <div id="importStatus" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">${resolveChromeImportInitialStatus(hasExt)}</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-ghost" id="cancelChromeImport">İptal</button>
-          <button class="btn btn-primary" id="doChromeImport">${resolveChromeImportButtonLabel(hasExt)}</button>
-        </div>
-      </div>
-    `;
+    modal.innerHTML = buildChromeImportModalHtml(hasExt);
     document.body.appendChild(modal);
 
     const close = () => modal.remove();
