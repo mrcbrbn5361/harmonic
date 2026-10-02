@@ -40,11 +40,34 @@ export class LyricsProvider {
   }
 
   async fetchLRCLIB(title: string, artist: string, duration?: number): Promise<string | null> {
+    const rawT = (title || '').trim();
     const cleanT = this.cleanTitle(title);
     const cleanA = (artist || '').replace(/\s*-\s*Topic$/i, '').trim();
     if (!cleanT) return null;
 
-    // 1. Süre ile tam eşleşme
+    // P3-02: önce ft/feat bozulmamış orijinal başlık denenir, sonra temizlenmiş/parantez varyantı.
+    // Orijinal == temizlenmişse sorgular birebir aynı olur — tek tur yeter (gereksiz istek yok).
+    if (rawT && rawT !== cleanT) {
+      // 0a. Orijinal başlıkla süre eşleşmesi
+      if (duration && duration > 0) {
+        const data = await this.fetchJson(
+          `https://lrclib.net/api/get?track_name=${encodeURIComponent(rawT)}&artist_name=${encodeURIComponent(cleanA)}&duration=${Math.round(duration)}`
+        );
+        if (data?.syncedLyrics) return data.syncedLyrics;
+        if (data?.plainLyrics) return data.plainLyrics;
+      }
+
+      // 0b. Orijinal başlıkla süresiz eşleşme
+      {
+        const data = await this.fetchJson(
+          `https://lrclib.net/api/get?track_name=${encodeURIComponent(rawT)}&artist_name=${encodeURIComponent(cleanA)}`
+        );
+        if (data?.syncedLyrics) return data.syncedLyrics;
+        if (data?.plainLyrics) return data.plainLyrics;
+      }
+    }
+
+    // 1. Süre ile tam eşleşme (temizlenmiş varyant)
     if (duration && duration > 0) {
       const data = await this.fetchJson(
         `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanT)}&artist_name=${encodeURIComponent(cleanA)}&duration=${Math.round(duration)}`
@@ -53,7 +76,7 @@ export class LyricsProvider {
       if (data?.plainLyrics) return data.plainLyrics;
     }
 
-    // 2. Süresiz eşleşme
+    // 2. Süresiz eşleşme (temizlenmiş varyant)
     {
       const data = await this.fetchJson(
         `https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanT)}&artist_name=${encodeURIComponent(cleanA)}`

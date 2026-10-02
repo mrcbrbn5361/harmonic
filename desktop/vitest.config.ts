@@ -19,6 +19,7 @@ export default defineConfig({
         'src/renderer/components/search-nav.ts',
         'src/renderer/components/content.ts',
         'src/renderer/components/system.ts',
+        'src/main/providers/lyrics-provider.ts',
       ],
     },
   },
