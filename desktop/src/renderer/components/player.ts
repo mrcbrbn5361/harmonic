@@ -71,6 +71,13 @@ export function applyAppendRadioItems(s: PlayerStateSlice, newItems: Song[]): vo
   s.queue = buildMergedQueue(s.userQueue, s.contextQueue);
 }
 
+/** Kuyruk sonuna yaklaşıldıysa (kalan <= 2) arka planda radyo çekme kararı (app.ts nextSong ile birebir). */
+export function shouldPreloadRadio(
+  s: Pick<PlayerStateSlice, 'shuffle' | 'queueIndex' | 'queue' | 'currentSong'>
+): boolean {
+  return !s.shuffle && s.queueIndex >= s.queue.length - 2 && !!s.currentSong;
+}
+
 export type EndedDecision = 'repeat-one' | 'stop' | 'next';
 
 /** handleTrackEnded'in saf kararı: repeat-one → baştan, autoplay kapalı + sonda → dur, yoksa next. */

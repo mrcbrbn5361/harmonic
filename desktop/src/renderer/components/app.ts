@@ -27,6 +27,7 @@ import {
   cycleRepeat,
   filterRadioItems,
   applyAppendRadioItems,
+  shouldPreloadRadio,
   decideTrackEnded,
   resolveTogglePlayAction,
 } from './player';
@@ -40,7 +41,6 @@ import {
   ytLyrics
 } from './api-client';
 import {
-  escapeHtml,
   formatTime,
   parseLRC,
   sanitizeName,
@@ -79,6 +79,7 @@ import {
   likeFill,
   applyLikeToggle,
   isTypingTarget,
+  resolveKeyAction,
   isRepeatActive,
   isRepeatOne,
 } from './transport';
@@ -126,6 +127,9 @@ import {
   HOME_QUEUE_LIMIT,
   RECENT_SONGS_LIMIT,
   BROWSE_EMPTY_HTML,
+  BROWSE_ERROR_HTML,
+  CONTENT_ERROR_HTML,
+  CONTENT_LOADING_HTML,
   LIBRARY_ERROR_HTML,
   LIBRARY_EMPTY_HTML,
   partitionSongs,
@@ -133,7 +137,6 @@ import {
   takeFirst,
   shouldInitHomeQueue,
   isStaleContent,
-  buildMediaCard,
   buildCardFor,
   buildDiscoverSection,
   buildSongSection,
@@ -143,6 +146,10 @@ import {
   buildBrowseHeader,
   buildBrowseSongsBody,
   buildBrowseCardsBody,
+  buildLibraryLocalPlaylistsSection,
+  buildLibraryYtPlaylistsSection,
+  buildLibraryAlbumsSection,
+  buildLibraryArtistsSection,
   normalizeLibraryTab,
   shouldShowRecentSection,
   shouldShowPlaylistSection,
@@ -213,6 +220,7 @@ import {
   shouldBuildShuffleOrder,
   shouldRestoreRepeat,
   REPEAT_ONE_BUTTON_HTML,
+  REPEAT_ALL_BUTTON_HTML,
   collectRegistrySongs,
 } from './system';
 
@@ -1272,7 +1280,7 @@ import {
       state.queueIndex = decision.index;
       playSong(state.queue[state.queueIndex]);
       // Kuyruk sonuna yaklaşıldıysa (kalan <= 2) arka planda radyo çekerek kuyruğu uzat
-      if (!state.shuffle && state.queueIndex >= state.queue.length - 2 && state.currentSong) {
+      if (shouldPreloadRadio(state) && state.currentSong) {
         preloadRadioQueue(state.currentSong);
       }
       return;
@@ -1378,9 +1386,9 @@ import {
     btn.classList.toggle('active', isRepeatActive(state.repeat));
     api.store.set('repeat', state.repeat);
     if (isRepeatOne(state.repeat)) {
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="14" text-anchor="middle" font-size="7" fill="currentColor" stroke="none" font-weight="bold">1</text></svg>';
+      btn.innerHTML = REPEAT_ONE_BUTTON_HTML;
     } else {
-      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+      btn.innerHTML = REPEAT_ALL_BUTTON_HTML;
     }
   }
 
@@ -1729,7 +1737,7 @@ function updatePlayIcon() {
     console.log('[Harmonic] Home first item:', data?.items?.[0] ? JSON.stringify(data.items[0]) : 'null');
 
     if (!data.items?.length) {
-      container.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+      container.innerHTML = CONTENT_ERROR_HTML;
       container.querySelector('.btn-retry')?.addEventListener('click', () => loadHome());
       return;
     }
@@ -1770,7 +1778,7 @@ function updatePlayIcon() {
     });
     } catch (err) {
       console.error('[Harmonic] loadHome error:', err);
-      container.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+      container.innerHTML = CONTENT_ERROR_HTML;
       container.querySelector('.btn-retry')?.addEventListener('click', () => loadHome());
     }
   }
@@ -1780,7 +1788,7 @@ function updatePlayIcon() {
     const targetContainer = $(`#${resolveBrowseContainerId(activePage)}`);
     if (!targetContainer) return;
 
-    targetContainer.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
+    targetContainer.innerHTML = CONTENT_LOADING_HTML;
     try {
       const browseData = await api.youtube.browse(browseId);
       const items: any[] = browseData.items || [];
@@ -1827,7 +1835,7 @@ function updatePlayIcon() {
         });
       });
     } catch {
-      targetContainer.innerHTML = '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><div style="display:flex;gap:8px;margin-top:12px;justify-content:center"><button id="btnBrowseRetry" class="btn btn-secondary btn-retry">Tekrar Dene</button><button id="btnBrowseBack" class="btn btn-ghost">← Geri</button></div></div>';
+      targetContainer.innerHTML = BROWSE_ERROR_HTML;
       targetContainer.querySelector('#btnBrowseRetry')?.addEventListener('click', () => openBrowse(browseId, fallbackTitle, fallbackThumb, onBack));
       targetContainer.querySelector('#btnBrowseBack')?.addEventListener('click', () => {
         if (onBack) onBack();
@@ -1840,7 +1848,7 @@ function updatePlayIcon() {
   async function loadLibrary() {
     const gen = state.navGeneration;
     const container = $('#libraryContent');
-    container.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
+    container.innerHTML = CONTENT_LOADING_HTML;
 
     // Yerel olarak dinlenenler
     const localRecent = state.recentlyPlayed;
@@ -1879,43 +1887,24 @@ function updatePlayIcon() {
     if (shouldShowPlaylistSection(tab)) {
       const localPlaylists = await api.store.get('playlists') || [];
       if (localPlaylists.length) {
-        html += `<div style="margin-bottom:24px">
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Özel Listelerim</h3>
-          <div class="card-grid">${localPlaylists.map((pl: any) => `
-            <div class="card" data-local-pl="${escapeHtml(pl.id)}" style="cursor:pointer">
-              <div class="card-thumb" style="background:var(--c-bg-3);display:flex;align-items:center;justify-content:center;color:var(--c-accent)">
-                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-              </div>
-              <div class="card-title">${escapeHtml(pl.name)}</div>
-              <div class="card-sub">${(pl.songs || []).length} şarkı</div>
-            </div>`).join('')}</div>
-        </div>`;
+        html += buildLibraryLocalPlaylistsSection(localPlaylists);
       }
 
       if (ytPlaylists.length) {
-        html += `<div style="margin-bottom:24px">
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">YouTube Music Listeleri</h3>
-          <div class="card-grid">${ytPlaylists.map((pl: any) => buildMediaCard(pl.browseId, pl.thumbnail, pl.title)).join('')}</div>
-        </div>`;
+        html += buildLibraryYtPlaylistsSection(ytPlaylists);
       }
     }
 
     // 3. Albümler
     if (shouldShowAlbumSection(tab)) {
       if (ytAlbums.length) {
-        html += `<div style="margin-bottom:24px">
-          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3>
-          <div class="card-grid">${ytAlbums.map((a: any) => buildMediaCard(a.browseId, a.thumbnail, a.title, String(a.artist || ''))).join('')}</div>
-        </div>`;
+        html += buildLibraryAlbumsSection(ytAlbums);
       }
     }
 
     // Sanatçılar (genel kütüphanede veya albümler/listeler yokken destekleyici)
     if (shouldShowArtistsSection(ytArtists.length, tab)) {
-      html += `<div style="margin-bottom:24px">
-        <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3>
-        <div class="card-grid">${ytArtists.map((a: any) => buildMediaCard(a.browseId, a.thumbnail, a.name)).join('')}</div>
-      </div>`;
+      html += buildLibraryArtistsSection(ytArtists);
     }
 
     const libraryEmptyKind = resolveLibraryEmpty(!!html, libraryLoadError, state.isLoggedIn);
@@ -2015,81 +2004,60 @@ function updatePlayIcon() {
       // Don't trigger if typing in input
       if (isTypingTarget((e.target as HTMLElement).tagName)) return;
 
-      switch (e.code) {
-        case 'Space':
-          e.preventDefault();
+      const action = resolveKeyAction(e.code, { ctrlKey: e.ctrlKey });
+      if (!action) return;
+      e.preventDefault();
+      switch (action) {
+        case 'togglePlay':
           togglePlay();
           break;
-        case 'ArrowLeft':
-          e.preventDefault();
-          if (e.ctrlKey) {
-            prevSong();
-          } else if (state.duration) {
+        case 'prev':
+          prevSong();
+          break;
+        case 'next':
+          nextSong();
+          break;
+        case 'seekBack':
+          if (state.duration) {
             api.player.seek(clampSeekTarget(state.currentTime, -keySeekStep(e.shiftKey), state.duration)).catch(() => {});
           }
           break;
-        case 'ArrowRight':
-          e.preventDefault();
-          if (e.ctrlKey) {
-            nextSong();
-          } else if (state.duration) {
+        case 'seekFwd':
+          if (state.duration) {
             api.player.seek(clampSeekTarget(state.currentTime, keySeekStep(e.shiftKey), state.duration)).catch(() => {});
           }
           break;
-        case 'ArrowUp':
-          e.preventDefault();
-          state.volume = volumeStepTo(state.volume, 5);
+        case 'volUp':
+        case 'volDown': {
+          state.volume = volumeStepTo(state.volume, action === 'volUp' ? 5 : -5);
           if (state.volume > 0) state.lastVolume = state.volume;
           updateVolumeSliderBg();
           api.player.setVolume(state.volume / 100).catch(() => {});
           api.store.set('volume', state.volume);
           break;
-        case 'ArrowDown':
-          e.preventDefault();
-          state.volume = volumeStepTo(state.volume, -5);
-          if (state.volume > 0) state.lastVolume = state.volume;
-          updateVolumeSliderBg();
-          api.player.setVolume(state.volume / 100).catch(() => {});
-          api.store.set('volume', state.volume);
-          break;
-        case 'KeyN':
-          e.preventDefault();
-          nextSong();
-          break;
-        case 'KeyP':
-          e.preventDefault();
-          prevSong();
-          break;
-        case 'KeyL':
-          e.preventDefault();
+        }
+        case 'like':
           if (state.currentSong) toggleLike(state.currentSong.id);
           break;
-        case 'KeyQ':
-          e.preventDefault();
+        case 'queue':
           $('#btnQueue')?.click();
           break;
-        case 'KeyT':
-          e.preventDefault();
+        case 'lyrics':
           $('#btnLyrics')?.click();
           break;
-        case 'KeyM':
-          e.preventDefault();
+        case 'mute':
           $('#btnVolume').click();
           break;
-        case 'KeyS':
-          e.preventDefault();
+        case 'shuffle':
           toggleShuffle();
           break;
-        case 'KeyR':
-          e.preventDefault();
+        case 'repeat':
           toggleRepeat();
           break;
-        case 'KeyF':
-          e.preventDefault();
+        case 'maximize':
           api.window.maximize();
           break;
-        case 'Escape':
-          e.preventDefault();
+        case 'escape':
           closePanels();
           closeContextMenu();
           $('#addToPlaylistModal')?.classList.remove('visible');

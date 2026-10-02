@@ -528,6 +528,12 @@ export const REPEAT_ONE_BUTTON_HTML =
   + '<polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>'
   + '<text x="12" y="14" text-anchor="middle" font-size="7" fill="currentColor" stroke="none" font-weight="bold">1</text></svg>';
 
+/** repeat=all düğme ikonu (app.ts toggleRepeat innerHTML ile birebir). */
+export const REPEAT_ALL_BUTTON_HTML =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">'
+  + '<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>'
+  + '<polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>';
+
 /** Kayıtlı beğeni detaylarından registry'ye alınacak şarkılar (id'si olanlar). */
 export function collectRegistrySongs(details: Record<string, Song>): Song[] {
   return Object.values(details).filter((s) => s?.id);

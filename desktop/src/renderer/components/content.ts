@@ -9,6 +9,7 @@
    ============================================ */
 
 import { escapeHtml } from './views';
+import type { LocalPlaylist } from './system';
 
 /** Ana sayfa kart limiti (app.ts: cards.slice(0, 8)). */
 export const HOME_CARDS_LIMIT = 8;
@@ -34,6 +35,15 @@ export const LIBRARY_ERROR_HTML =
 /** Kütüphane genel boş-sekme yedeği (app.ts loadLibrary ile birebir). */
 export const LIBRARY_EMPTY_HTML =
   '<div class="empty-state"><div class="empty-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div><p class="empty-text">Bu sekmede henüz içerik yok</p><p class="empty-hint-text">Müzik dinledikçe veya listeler oluşturdukça burada görünecek</p></div>';
+/** Home/browse yükleme-hatası yedeği (app.ts loadHome ile birebir — retry düğmeli). */
+export const CONTENT_ERROR_HTML =
+  '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
+/** Browse/library yükleme yer tutucusu (app.ts openBrowse + loadLibrary ile birebir). */
+export const CONTENT_LOADING_HTML =
+  '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
+/** Browse yükleme-hatası yedeği (app.ts openBrowse ile birebir — retry + geri düğmeli). */
+export const BROWSE_ERROR_HTML =
+  '<div class="empty-state"><p class="empty-text">İçerik yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><div style="display:flex;gap:8px;margin-top:12px;justify-content:center"><button id="btnBrowseRetry" class="btn btn-secondary btn-retry">Tekrar Dene</button><button id="btnBrowseBack" class="btn btn-ghost">← Geri</button></div></div>';
 
 export interface IdItem {
   id?: unknown;
@@ -171,6 +181,45 @@ export function buildBrowseSongsBody(rowsInner: string): string {
 /** Browse gövde: kart ızgarası (app.ts cards dalı ile birebir). */
 export function buildBrowseCardsBody(cardsInner: string): string {
   return `<div class="card-grid">${cardsInner}</div>`;
+}
+
+/** Kütüphane "Özel Listelerim" bölümü (app.ts loadLibrary ile birebir). */
+export function buildLibraryLocalPlaylistsSection(localPlaylists: readonly LocalPlaylist[]): string {
+  return `<div style="margin-bottom:24px">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Özel Listelerim</h3>
+          <div class="card-grid">${localPlaylists.map((pl) => `
+            <div class="card" data-local-pl="${escapeHtml(pl.id)}" style="cursor:pointer">
+              <div class="card-thumb" style="background:var(--c-bg-3);display:flex;align-items:center;justify-content:center;color:var(--c-accent)">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              </div>
+              <div class="card-title">${escapeHtml(pl.name)}</div>
+              <div class="card-sub">${(pl.songs || []).length} şarkı</div>
+            </div>`).join('')}</div>
+        </div>`;
+}
+
+/** Kütüphane "YouTube Music Listeleri" bölümü (app.ts loadLibrary ile birebir). */
+export function buildLibraryYtPlaylistsSection(ytPlaylists: readonly CardSource[]): string {
+  return `<div style="margin-bottom:24px">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">YouTube Music Listeleri</h3>
+          <div class="card-grid">${ytPlaylists.map((pl) => buildMediaCard(pl.browseId, pl.thumbnail, pl.title)).join('')}</div>
+        </div>`;
+}
+
+/** Kütüphane "Albümler" bölümü (app.ts loadLibrary ile birebir). */
+export function buildLibraryAlbumsSection(ytAlbums: readonly CardSource[]): string {
+  return `<div style="margin-bottom:24px">
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Albümler</h3>
+          <div class="card-grid">${ytAlbums.map((a) => buildMediaCard(a.browseId, a.thumbnail, a.title, String(a.artist || ''))).join('')}</div>
+        </div>`;
+}
+
+/** Kütüphane "Sanatçılar" bölümü (app.ts loadLibrary ile birebir). */
+export function buildLibraryArtistsSection(ytArtists: readonly CardSource[]): string {
+  return `<div style="margin-bottom:24px">
+        <h3 style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--c-text-1)">Sanatçılar</h3>
+        <div class="card-grid">${ytArtists.map((a) => buildMediaCard(a.browseId, a.thumbnail, a.name)).join('')}</div>
+      </div>`;
 }
 
 export type LibraryTab = 'recent' | 'songs' | 'playlists' | 'albums';
