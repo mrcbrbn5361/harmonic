@@ -147,6 +147,61 @@ describe('fetchLRCLIB sorgu zinciri (P3-02)', () => {
     const urls = calls.map((c) => c.url);
     expect(urls[2]).toContain(`track_name=${encodeURIComponent('Song')}&`);
   });
+
+  it('boş title/artist ile istek yapılmaz (falsy title/artist kolları)', async () => {
+    responder = () => null;
+    const res = await lyricsProvider.fetchLRCLIB('', '', 50);
+    expect(res).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('ok:false yanıt zinciri null ile biter', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => null })));
+    const res = await lyricsProvider.fetchLRCLIB('Song ft. X', 'Artist', 100);
+    expect(res).toBeNull();
+  });
+
+  it('orijinal başlık + süre sorgusunda düz söz döner (0a plain)', async () => {
+    responder = (_u, i) => (i === 0 ? { plainLyrics: 'plain-0a' } : null);
+    const res = await lyricsProvider.fetchLRCLIB('Song ft. X', 'Artist', 100);
+    expect(res).toBe('plain-0a');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('orijinal başlık süresiz sorgusunda senkronize döner (0b synced)', async () => {
+    responder = (_u, i) => (i === 1 ? { syncedLyrics: '[00:02.00] 0b' } : null);
+    const res = await lyricsProvider.fetchLRCLIB('Song ft. X', 'Artist', 100);
+    expect(res).toBe('[00:02.00] 0b');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('orijinal başlık süresiz sorgusunda düz söz döner (0b plain)', async () => {
+    responder = (_u, i) => (i === 1 ? { plainLyrics: 'plain-0b' } : null);
+    const res = await lyricsProvider.fetchLRCLIB('Song ft. X', 'Artist', 100);
+    expect(res).toBe('plain-0b');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('temizlenmiş + süre sorgusunda senkronize döner (1 synced)', async () => {
+    responder = (_u, i) => (i === 2 ? { syncedLyrics: '[00:03.00] c1' } : null);
+    const res = await lyricsProvider.fetchLRCLIB('Song ft. X', 'Artist', 100);
+    expect(res).toBe('[00:03.00] c1');
+    expect(calls).toHaveLength(3);
+  });
+
+  it('temizlenmiş + süresiz sorgusunda senkronize döner (2 synced)', async () => {
+    responder = (_u, i) => (i === 3 ? { syncedLyrics: '[00:04.00] c2' } : null);
+    const res = await lyricsProvider.fetchLRCLIB('Song ft. X', 'Artist', 100);
+    expect(res).toBe('[00:04.00] c2');
+    expect(calls).toHaveLength(4);
+  });
+
+  it('temizlenmiş + süresiz sorgusunda düz söz döner (2 plain)', async () => {
+    responder = (_u, i) => (i === 3 ? { plainLyrics: 'plain-c2' } : null);
+    const res = await lyricsProvider.fetchLRCLIB('Song ft. X', 'Artist', 100);
+    expect(res).toBe('plain-c2');
+    expect(calls).toHaveLength(4);
+  });
 });
 
 describe('LyricsProvider ayarları ve fetch delegasyonu', () => {
@@ -184,5 +239,26 @@ describe('LyricsProvider ayarları ve fetch delegasyonu', () => {
     const res = await lyricsProvider.fetch('vid1', ytApi);
     expect(res).toBe('yt-only');
     expect(calls).toHaveLength(0);
+  });
+
+  it('fetch artist yokken LRCLIB sonucunu döner (artist-falsy + LRCLIB dönüş kolu)', async () => {
+    responder = (_u, i) => (i === 0 ? { syncedLyrics: '[00:05.00] lrc' } : null);
+    const ytApi = { getLyrics: vi.fn(async () => 'yt-lyrics') };
+    const res = await lyricsProvider.fetch('vid1', ytApi, 'Song');
+    expect(res).toBe('[00:05.00] lrc');
+    expect(calls.length).toBeGreaterThan(0);
+    expect(ytApi.getLyrics).not.toHaveBeenCalled();
+  });
+
+  it('fetchLRCLIB hata fırlatırsa catch ytApi yedeğine düşer', async () => {
+    const provider = lyricsProvider as unknown as {
+      fetchLRCLIB: (t: string, a: string, d?: number) => Promise<string | null>;
+    };
+    const spy = vi.spyOn(provider, 'fetchLRCLIB').mockRejectedValueOnce(new Error('boom'));
+    const ytApi = { getLyrics: vi.fn(async () => 'yt-fallback') };
+    const res = await lyricsProvider.fetch('vid1', ytApi, 'Song', 'Artist', 100);
+    expect(res).toBe('yt-fallback');
+    expect(ytApi.getLyrics).toHaveBeenCalledWith('vid1');
+    spy.mockRestore();
   });
 });
