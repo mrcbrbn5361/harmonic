@@ -42,14 +42,11 @@ import {
 } from './api-client';
 import {
   formatTime,
-  parseLRC,
   sanitizeName,
-  findActiveLyricIndex,
   resolveDisplayName,
   toHiResAvatar,
   getAvatarInitial,
-  getUpcomingContext,
-  type LyricLine
+  getUpcomingContext
 } from './views';
 import {
   show,
@@ -88,16 +85,17 @@ import {
   buildContextMenuHtml,
   clampMenuPos,
   copyLinkFor,
-  buildLyricsHtml,
   buildPlaylistPickerListHtml,
-  parseSeekTime,
-  shouldSyncLyric,
-  hasLyricChanged,
-  isStaleLyricResponse,
   buildQueueHtml,
   queueIndexAfterUserPick,
   resolveContextQueuePick,
 } from './panels';
+import {
+  cacheLyricsToBotServer,
+  loadLyrics,
+  renderLyricsContent,
+  syncActiveLyric,
+} from './lyrics-view';
 import {
   SEARCH_DEBOUNCE_MS,
   normalizeQuery,
@@ -876,13 +874,10 @@ import {
           syncBotServerAndLivePreview(state.currentSong.title, state.currentSong.artist, state.currentSong.thumbnail);
 
           // Şarkı sözlerini yeni parça için arka planda yükle
-          (state as any).currentLyrics = null;
+          state.currentLyrics = null;
           ytLyrics(state.currentSong.id, state.currentSong.title, state.currentSong.artist, state.currentSong.duration).then((l) => {
             if (state.currentSong?.id === pollVid && l) {
-              (state as any).currentLyrics = l;
-              if ((api as any).botServer) {
-                (api as any).botServer.updateState({ lyrics: l }).catch(() => {});
-              }
+              cacheLyricsToBotServer(pollVid, l);
               if (state.panelOpen === 'lyrics') renderLyricsContent(l);
             }
           }).catch(() => {});
@@ -1040,13 +1035,10 @@ import {
     updateMediaSessionMetadata();
 
     // Şarkı sözlerini arka planda çekip bot server'a besle
-    (state as any).currentLyrics = null;
+    state.currentLyrics = null;
     ytLyrics(song.id, song.title, song.artist, song.duration).then((l) => {
       if (state.currentSong?.id === song.id && l) {
-        (state as any).currentLyrics = l;
-        if ((api as any).botServer) {
-          (api as any).botServer.updateState({ lyrics: l }).catch(() => {});
-        }
+        cacheLyricsToBotServer(song.id, l);
       }
     }).catch(() => {});
 
@@ -1208,7 +1200,7 @@ import {
           url: state.currentSong?.id ? `https://music.youtube.com/watch?v=${state.currentSong.id}` : undefined
         },
         recommendations: recs,
-        lyrics: (state as any).currentLyrics || undefined
+        lyrics: state.currentLyrics || undefined
       }).catch(() => {});
     }
   }
@@ -1584,93 +1576,6 @@ function updatePlayIcon() {
         closeModal();
         $('#btnNewPlaylist')?.click();
       };
-    }
-  }
-
-  let currentParsedLyrics: LyricLine[] = [];
-  let lastActiveLyricIdx = -1;
-
-  async function loadLyrics() {
-    if (!state.currentSong) return;
-    const body = $('#lyricsBody');
-    const song = state.currentSong;
-
-    if ((state as any).currentLyrics) {
-      renderLyricsContent((state as any).currentLyrics);
-      return;
-    }
-
-    body.innerHTML = '<div class="empty-state"><p class="empty-hint-text">Yükleniyor...</p></div>';
-    try {
-      const lyrics = await ytLyrics(song.id, song.title, song.artist, song.duration);
-      if (isStaleLyricResponse(state.currentSong?.id, song.id)) return; // Stale parça
-
-      (state as any).currentLyrics = lyrics || null;
-      if ((api as any).botServer) {
-        (api as any).botServer.updateState({ lyrics: lyrics || undefined }).catch(() => {});
-      }
-
-      if (lyrics) {
-        renderLyricsContent(lyrics);
-      } else {
-        currentParsedLyrics = [];
-        body.innerHTML = '<div class="empty-state"><p class="empty-text">Şarkı sözleri bulunamadı</p><p class="empty-hint-text">Bu şarkı için henüz söz eklenmemiş</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
-        body.querySelector('.btn-retry')?.addEventListener('click', () => {
-          (state as any).currentLyrics = undefined;
-          loadLyrics();
-        });
-      }
-    } catch {
-      currentParsedLyrics = [];
-      body.innerHTML = '<div class="empty-state"><p class="empty-text">Sözler yüklenemedi</p><p class="empty-hint-text">Lütfen internet bağlantınızı kontrol edip tekrar deneyin</p><button class="btn btn-secondary btn-retry" style="margin-top:12px">Tekrar Dene</button></div>';
-      body.querySelector('.btn-retry')?.addEventListener('click', () => {
-        (state as any).currentLyrics = undefined;
-        loadLyrics();
-      });
-    }
-  }
-
-  function renderLyricsContent(lyrics: string) {
-    const body = $('#lyricsBody');
-    const parsed = parseLRC(lyrics);
-    currentParsedLyrics = parsed;
-    lastActiveLyricIdx = -1;
-
-    body.innerHTML = buildLyricsHtml(lyrics, parsed);
-
-    if (parsed.length > 0) {
-      body.querySelectorAll('.lyric-line.synced').forEach((el) => {
-        el.addEventListener('click', () => {
-          const t = parseSeekTime((el as HTMLElement).dataset.time);
-          if (t !== null) api.player.seek(t).catch(() => {});
-        });
-      });
-      syncActiveLyric(state.currentTime);
-    }
-  }
-
-  function syncActiveLyric(curTime: number) {
-    if (!shouldSyncLyric(currentParsedLyrics.length, state.panelOpen)) return;
-    const activeIdx = findActiveLyricIndex(currentParsedLyrics, curTime);
-
-    if (hasLyricChanged(lastActiveLyricIdx, activeIdx)) {
-      lastActiveLyricIdx = activeIdx;
-      const body = $('#lyricsBody');
-      body.querySelectorAll('.lyric-line.synced').forEach((el, idx) => {
-        el.classList.toggle('active', idx === activeIdx);
-      });
-
-      if (activeIdx >= 0) {
-        const activeEl = body.querySelector(`.lyric-line.synced[data-idx="${activeIdx}"]`);
-        activeEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        // Bot sunucusuna anlık satırı aktar
-        if ((api as any).botServer && currentParsedLyrics[activeIdx]?.text) {
-          (api as any).botServer.updateState({
-            currentLyricLine: currentParsedLyrics[activeIdx].text
-          }).catch(() => {});
-        }
-      }
     }
   }
 

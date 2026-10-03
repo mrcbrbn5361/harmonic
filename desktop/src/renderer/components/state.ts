@@ -59,7 +59,7 @@ export interface AppState {
   navGeneration: number;
   isLoggedIn: boolean;
   user: UserProfile | null;
-  currentLyrics: any;
+  currentLyrics?: string | null;
 }
 
 export const state: AppState = {
