@@ -1,6 +1,6 @@
 {
   "name": "harmonic-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Harmonic - Premium music streaming experience for your desktop",
   "private": true,
   "workspaces": [
@@ -14,7 +14,8 @@
     "build:website": "npm run build --workspace=website",
     "build:all": "npm run build --workspace=desktop && npm run build:website",
     "build:installer": "npm run build:installer --workspace=desktop",
-    "build:win": "npm run build:win --workspace=desktop"
+    "build:win": "npm run build:win --workspace=desktop",
+    "build:mac": "npm run build:mac --workspace=desktop"
   },
   "author": "Harmonic Team",
   "license": "MIT",

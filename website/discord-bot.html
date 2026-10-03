@@ -4,16 +4,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="Harmonic Discord Bot Entegrasyonu ve Geliştirici Dökümantasyonu. .har ve .harmonic komutları ile Discord botlarında zengin Harmonic müzik kartları oluşturun.">
-  <title>Discord Bot Entegrasyonu & Dökümantasyon - Harmonic v1.0.1</title>
+  <title>Discord Bot Entegrasyonu & Dökümantasyon - Harmonic v1.0.2</title>
   <meta name="theme-color" content="#0a0a0a">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23e53935'/%3E%3Ctext x='32' y='44' font-family='Arial' font-size='36' font-weight='bold' text-anchor='middle' fill='white'%3EH%3C/text%3E%3C/svg%3E">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Harmonic">
-  <meta property="og:title" content="Discord Bot Entegrasyonu & Dökümantasyon - Harmonic v1.0.1">
+  <meta property="og:title" content="Discord Bot Entegrasyonu & Dökümantasyon - Harmonic v1.0.2">
   <meta property="og:description" content="Harmonic Discord Bot Entegrasyonu ve Geliştirici Dökümantasyonu. .har ve .harmonic komutları ile Discord botlarında zengin Harmonic müzik kartları oluşturun.">
   <meta property="og:url" content="https://harmonic-music.org/discord-bot.html">
   <meta name="twitter:card" content="summary">
-  <meta name="twitter:title" content="Discord Bot Entegrasyonu & Dökümantasyon - Harmonic v1.0.1">
+  <meta name="twitter:title" content="Discord Bot Entegrasyonu & Dökümantasyon - Harmonic v1.0.2">
   <meta name="twitter:description" content="Harmonic Discord Bot Entegrasyonu ve Geliştirici Dökümantasyonu. .har ve .harmonic komutları ile Discord botlarında zengin Harmonic müzik kartları oluşturun.">
   <link rel="stylesheet" href="./css/style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,7 +46,7 @@
   <!-- Hero -->
   <section class="doc-hero">
     <div class="container">
-      <div class="hero-badge" style="background:rgba(88,101,242,.15);border-color:rgba(88,101,242,.35);color:#828dff">v1.0.1 - Discord Bot & Geliştirici Rehberi</div>
+      <div class="hero-badge" style="background:rgba(88,101,242,.15);border-color:rgba(88,101,242,.35);color:#828dff">v1.0.2 - Discord Bot & Geliştirici Rehberi</div>
       <h1>Discord Botunuzla <br><span class="highlight">Harmonic Şarkılarını</span> Paylaşın</h1>
       <p>
         Discord sunucunuzda tek bir komutla (<code>.har</code> veya <code>.harmonic</code>) Harmonic'te çalan şarkıyı, albüm kapağını, anlık ilerleme çubuğunu ve önerileri zengin bir Discord kartı ile paylaşın.
@@ -327,11 +327,11 @@ bot.run("YOUR_DISCORD_BOT_TOKEN")</code></pre>
 
         <!-- TAB 3: REST API -->
         <div class="code-tab-pane" id="tab-api">
-<pre><code>// Harmonic v1.0.1 Yerel Bot REST API
+<pre><code>// Harmonic v1.0.2 Yerel Bot REST API
 // Port: 9863 (CORS Destekli)
 // Uç Nokta: GET http://127.0.0.1:9863/api/v1/state
 
-// Örnek Yanıt:
+// Örnek Yanıt (version alanı çalışan uygulamanın sürümünü yansıtır — örnek değer):
 {
   "app": "Harmonic Music",
   "version": "1.0.1",
@@ -379,7 +379,7 @@ console.log(`Öneri 1: ${data.recommendations[0].title}`);
       <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:32px;margin-top:32px">
         <h3 style="margin-bottom:16px">Harmonic Masaüstü Uygulamasında Nasıl Açılır?</h3>
         <ol style="margin-left:20px;color:var(--text-secondary);line-height:2">
-          <li><strong>Harmonic v1.0.1</strong> masaüstü uygulamasını açın.</li>
+          <li><strong>Harmonic v1.0.2</strong> masaüstü uygulamasını açın.</li>
           <li>Sol menüden en alttaki <strong>Ayarlar</strong> (Çark) sekmesine tıklayın.</li>
           <li><strong>Discord Bot Entegrasyonu (.har / .harmonic)</strong> bölümünü bulun.</li>
           <li><strong>"Yerel Bot REST API Sunucusu"</strong> anahtarının açık olduğundan emin olun (Varsayılan olarak açıktır, Port 9863).</li>
@@ -418,7 +418,7 @@ console.log(`Öneri 1: ${data.recommendations[0].title}`);
       <div class="footer-bottom">
         <p>&copy; 2026 Harmonic. Açık kaynak MIT lisansı ile sunulmaktadır.</p>
         <div class="footer-bottom-links">
-          <span style="color:var(--text-muted)">v1.0.1</span>
+          <span style="color:var(--text-muted)">v1.0.2</span>
         </div>
       </div>
     </div>

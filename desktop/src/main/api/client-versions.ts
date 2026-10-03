@@ -11,7 +11,7 @@ export function appVersion(): string {
   try {
     return app.getVersion();
   } catch {
-    return '1.0.1';
+    return '1.0.2';
   }
 }
 

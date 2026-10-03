@@ -65,7 +65,7 @@ test('app boots: shell, main-process version, auth state settles', async () => {
   await expect(p.locator('#player')).toBeVisible();
 
   const version = await electronApp!.evaluate(({ app }) => app.getVersion());
-  expect(version).toBe('1.0.1');
+  expect(version).toBe('1.0.2');
 
   await expect.poll(async () => {
     const loginVisible = await p.locator('#btnAuthLogin').isVisible();

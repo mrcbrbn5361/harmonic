@@ -1,6 +1,6 @@
 {
   "name": "harmonic",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Harmonic - Premium music streaming for Windows 11",
   "main": "dist/main/main.js",
   "author": "Harmonic Team",
@@ -17,6 +17,7 @@
     "build:renderer": "vite build",
     "build:installer": "npm run build && electron-builder --win nsis",
     "build:win": "npm run build && electron-builder --win",
+    "build:mac": "npm run build && electron-builder --mac",
     "build:portable": "npm run build && electron-builder --win portable",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -96,13 +97,28 @@
       "license": "../LICENSE",
       "artifactName": "Harmonic-Setup-${version}-win11.${ext}",
       "include": "installer.nsh",
-      "runAfterFinish": true,
+      "runAfterFinish": false,
       "deleteAppDataOnUninstall": false,
       "displayLanguageSelector": false,
       "warningsAsErrors": false
     },
     "portable": {
       "artifactName": "Harmonic-Portable-${version}-win11.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns",
+      "artifactName": "Harmonic-Setup-${version}-mac.${ext}",
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "dmg": {
+      "artifactName": "Harmonic-Setup-${version}-mac.${ext}"
     }
   }
 }
