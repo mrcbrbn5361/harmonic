@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import Store from 'electron-store';
 import CDP from 'chrome-remote-interface';
 import { logger } from '../utils/logger';
+import { buildDomWaitScript } from './dom-wait';
 
 // ── YouTube Music cookie tabanlı giriş ──────────
 // Kullanıcı music.youtube.com'a normal Google hesabıyla giriş yapar.
@@ -253,29 +254,20 @@ export class MusicAuth {
             const curUrl = this.loginWindow.webContents.getURL() || '';
             if (!curUrl.includes('music.youtube.com')) {
               await this.loginWindow.webContents.loadURL('https://music.youtube.com/');
-              for (let i = 0; i < 8; i++) {
-                if (remainingTime() < 600) break;
-                try {
-                  const has = await this.loginWindow!.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('#account-name'))`, true);
-                  if (has) break;
-                } catch {}
-                await new Promise(r => setTimeout(r, 250));
-              }
+              // M-13: sabit 250ms poll yerine olay-tabanlı MutationObserver bekleme (deadline üst sınırı korunur)
+              try {
+                await this.loginWindow!.webContents.executeJavaScript(buildDomWaitScript('ytmusic-nav-bar #avatar img, #account-name', Math.max(0, Math.min(2000, remainingTime() - 600))), true);
+              } catch {}
             }
           } catch {}
           // hesap menüsü kapalıysa avatar'a tıklayıp aç (saf JS, TypeScript casting yok)
           try {
             await this.loginWindow.webContents.executeJavaScript(`(function(){ if(!document.querySelector('ytd-active-account-header-renderer #account-name')){ const b=document.querySelector('ytmusic-nav-bar #avatar button')||document.querySelector('ytmusic-nav-bar #avatar')||document.querySelector('#avatar-btn'); if(b && typeof b.click === 'function'){ b.click(); } } })()`, true);
           } catch {}
-          // Menü açılana kadar en fazla 1.5sn bekle (250ms aralıklarla)
-          for (let i = 0; i < 6; i++) {
-            if (remainingTime() < 500) break;
-            try {
-              const has = await this.loginWindow.webContents.executeJavaScript(`!!document.querySelector('ytd-active-account-header-renderer #account-name')`, true);
-              if (has) break;
-            } catch {}
-            await new Promise(r => setTimeout(r, 250));
-          }
+          // M-13: menü açılana kadar olay-tabanlı bekleme (max 1.5sn, deadline üst sınırı korunur)
+          try {
+            await this.loginWindow.webContents.executeJavaScript(buildDomWaitScript('ytd-active-account-header-renderer #account-name', Math.max(0, Math.min(1500, remainingTime() - 500))), true);
+          } catch {}
           const domData: any = await this.loginWindow.webContents.executeJavaScript(`(function(){
             const acc=document.querySelector('ytd-active-account-header-renderer');
             let name='', email='', picture='', handle='';
@@ -512,15 +504,11 @@ export class MusicAuth {
 
         if (win.isDestroyed()) return null;
 
-        // sayfa + nav-bar avatar yüklenene kadar bekle (200ms aralıklarla, deadline korumalı)
+        // M-13: sayfa + nav-bar avatar için olay-tabanlı bekleme (deadline korumalı)
         const pollNavBarEnd = Math.min(deadline - 800, Date.now() + 1800);
-        while (Date.now() < pollNavBarEnd && !win.isDestroyed()) {
-          try {
-            const has = await win.webContents.executeJavaScript(`!!(document.querySelector('ytmusic-nav-bar #avatar img')||document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`, true);
-            if (has) break;
-          } catch {}
-          await new Promise(r => setTimeout(r, 200));
-        }
+        try {
+          await win.webContents.executeJavaScript(buildDomWaitScript('ytmusic-nav-bar #avatar img, ytd-active-account-header-renderer #account-name, #account-name', Math.max(0, pollNavBarEnd - Date.now())), true);
+        } catch {}
 
         if (win.isDestroyed()) return null;
 
@@ -529,15 +517,11 @@ export class MusicAuth {
           await win.webContents.executeJavaScript(`(function(){ const b=document.querySelector('ytmusic-nav-bar #avatar button')||document.querySelector('ytmusic-nav-bar #avatar')||document.querySelector('#avatar-btn'); if(b && typeof b.click === 'function'){ b.click(); } })()`, true);
         } catch {}
 
-        // Menü açılana kadar bekle (200ms aralıklarla, deadline korumalı)
+        // M-13: menü için olay-tabanlı bekleme (deadline korumalı)
         const pollMenuEnd = Math.min(deadline - 300, Date.now() + 1000);
-        while (Date.now() < pollMenuEnd && !win.isDestroyed()) {
-          try {
-            const has = await win.webContents.executeJavaScript(`!!(document.querySelector('ytd-active-account-header-renderer #account-name')||document.querySelector('#account-name'))`, true);
-            if (has) break;
-          } catch {}
-          await new Promise(r => setTimeout(r, 200));
-        }
+        try {
+          await win.webContents.executeJavaScript(buildDomWaitScript('ytd-active-account-header-renderer #account-name, #account-name', Math.max(0, pollMenuEnd - Date.now())), true);
+        } catch {}
 
         if (win.isDestroyed()) return null;
 
@@ -739,17 +723,15 @@ export class MusicAuth {
       const { Page, Runtime } = client;
       await Page.enable();
       await Runtime.enable();
-      // Sabit 7sn kör bekleme yerine DOM profil veya navigasyon öğesini adaptif sorgula (200ms x 8 = max 1.6sn, erken çıkışlı)
-      for (let i = 0; i < 8; i++) {
-        try {
-          const check = await Runtime.evaluate({
-            expression: `!!(document.querySelector('ytd-active-account-header-renderer') || document.querySelector('ytmusic-app-navigation-bar') || document.querySelector('#avatar'))`,
-            returnByValue: true
-          });
-          if (check?.result?.value) break;
-        } catch {}
-        await new Promise((r) => setTimeout(r, 200));
-      }
+      // M-13: sabit 7sn kör bekleme yerine olay-tabanlı adaptif bekleme
+      // (MutationObserver erken çıkışlı, max 1.6sn; awaitPromise promise değerini bekler)
+      try {
+        await Runtime.evaluate({
+          expression: buildDomWaitScript('ytd-active-account-header-renderer, ytmusic-app-navigation-bar, #avatar', 1600),
+          returnByValue: true,
+          awaitPromise: true
+        });
+      } catch {}
       const res = await Runtime.evaluate({
         expression: `(function(){
           try {

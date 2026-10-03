@@ -20,6 +20,7 @@ export default defineConfig({
         'src/renderer/components/content.ts',
         'src/renderer/components/system.ts',
         'src/main/providers/lyrics-provider.ts',
+        'src/main/auth/dom-wait.ts',
       ],
     },
   },
