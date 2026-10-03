@@ -22,6 +22,8 @@ import {
   buildSongSection,
   buildLibraryAlbumsSection,
   buildLibraryArtistsSection,
+  buildLibraryLocalPlaylistsSection,
+  buildLibraryYtPlaylistsSection,
   resolveHomeHtml,
   resolveBrowseContainerId,
   resolveBrowseBack,
@@ -170,6 +172,47 @@ describe('library section builders', () => {
     expect(html).toContain('data-browse="a1"');
     expect(html).toContain('src="i.jpg"');
     expect(html).toContain('Sanatçı');
+    expect(html).not.toContain('card-sub');
+  });
+  it('buildLibraryLocalPlaylistsSection renders empty grid', () => {
+    const html = buildLibraryLocalPlaylistsSection([]);
+    expect(html).toContain('Özel Listelerim');
+    expect(html).toContain('card-grid');
+    expect(html).not.toContain('card-title');
+  });
+  it('buildLibraryLocalPlaylistsSection renders cards with name and song count', () => {
+    const html = buildLibraryLocalPlaylistsSection([
+      {
+        id: 'p1',
+        name: 'Listem',
+        songs: [{ id: 's1', title: 'S1', artist: 'A', artistId: 'a1', thumbnail: '', duration: 100 }],
+        createdAt: 1,
+      },
+    ]);
+    expect(html).toContain('data-local-pl="p1"');
+    expect(html).toContain('Listem');
+    expect(html).toContain('1 şarkı');
+  });
+  it('buildLibraryLocalPlaylistsSection counts 0 for undefined songs', () => {
+    const html = buildLibraryLocalPlaylistsSection([
+      { id: 'p2', name: 'Boş', songs: undefined, createdAt: 1 } as never,
+    ]);
+    expect(html).toContain('data-local-pl="p2"');
+    expect(html).toContain('0 şarkı');
+  });
+  it('buildLibraryYtPlaylistsSection renders empty grid', () => {
+    const html = buildLibraryYtPlaylistsSection([]);
+    expect(html).toContain('YouTube Music Listeleri');
+    expect(html).toContain('card-grid');
+    expect(html).not.toContain('card-title');
+  });
+  it('buildLibraryYtPlaylistsSection renders cards without sub', () => {
+    const html = buildLibraryYtPlaylistsSection([
+      { browseId: 'y1', thumbnail: 'y.jpg', title: 'YT Liste' },
+    ]);
+    expect(html).toContain('data-browse="y1"');
+    expect(html).toContain('src="y.jpg"');
+    expect(html).toContain('YT Liste');
     expect(html).not.toContain('card-sub');
   });
 });
