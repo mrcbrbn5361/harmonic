@@ -6,6 +6,7 @@ import {
   filterRadioItems,
   applyAppendRadioItems,
   decideTrackEnded,
+  shouldPreloadRadio,
   resolveTogglePlayAction,
   type PlayerStateSlice,
 } from './player';
@@ -109,6 +110,24 @@ describe('decideTrackEnded', () => {
     expect(decideTrackEnded(mid, false)).toBe('next');
     const noSong = baseState({ currentSong: null });
     expect(decideTrackEnded(noSong, true)).toBe('stop');
+  });
+});
+
+describe('shouldPreloadRadio', () => {
+  it('kuyruk sonunda true: shuffle kapalı + kalan<=2 + şarkı var', () => {
+    const nearEnd = baseState({ queueIndex: 1 });
+    expect(shouldPreloadRadio(nearEnd)).toBe(true);
+    const atEnd = baseState({ queueIndex: 2 });
+    expect(shouldPreloadRadio(atEnd)).toBe(true);
+  });
+
+  it('false kolları: shuffle açık / kuyruk ortası / şarkı yok', () => {
+    const shuffling = baseState({ queueIndex: 1, shuffle: true });
+    expect(shouldPreloadRadio(shuffling)).toBe(false);
+    const mid = baseState({ queueIndex: 0 });
+    expect(shouldPreloadRadio(mid)).toBe(false);
+    const noSong = baseState({ queueIndex: 2, currentSong: null });
+    expect(shouldPreloadRadio(noSong)).toBe(false);
   });
 });
 

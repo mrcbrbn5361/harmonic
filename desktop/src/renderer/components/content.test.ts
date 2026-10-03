@@ -20,6 +20,8 @@ import {
   buildCardFor,
   buildDiscoverSection,
   buildSongSection,
+  buildLibraryAlbumsSection,
+  buildLibraryArtistsSection,
   resolveHomeHtml,
   resolveBrowseContainerId,
   resolveBrowseBack,
@@ -126,6 +128,49 @@ describe('sections', () => {
     expect(resolveHomeHtml('<div/>')).toBe('<div/>');
     expect(resolveHomeHtml('')).toBe(HOME_EMPTY_HTML);
     expect(BROWSE_EMPTY_HTML).toContain('İçerik bulunamadı');
+  });
+});
+
+describe('library section builders', () => {
+  it('buildLibraryAlbumsSection renders empty grid', () => {
+    const html = buildLibraryAlbumsSection([]);
+    expect(html).toContain('Albümler');
+    expect(html).toContain('card-grid');
+    expect(html).not.toContain('card-title');
+  });
+  it('buildLibraryAlbumsSection renders cards with artist sub', () => {
+    const html = buildLibraryAlbumsSection([
+      { browseId: 'b1', thumbnail: 't.jpg', title: 'Albüm', artist: 'Sanatçı A' },
+    ]);
+    expect(html).toContain('data-browse="b1"');
+    expect(html).toContain('src="t.jpg"');
+    expect(html).toContain('Albüm');
+    expect(html).toContain('card-sub');
+    expect(html).toContain('Sanatçı A');
+  });
+  it('buildLibraryAlbumsSection keeps empty sub for falsy artist', () => {
+    const html = buildLibraryAlbumsSection([
+      { browseId: 'b2', thumbnail: 't2.jpg', title: 'X', artist: '' },
+      { browseId: 'b3', title: 'Y' },
+    ]);
+    expect(html).toContain('data-browse="b2"');
+    expect(html).toContain('data-browse="b3"');
+    expect(html).toContain('card-sub');
+  });
+  it('buildLibraryArtistsSection renders empty grid', () => {
+    const html = buildLibraryArtistsSection([]);
+    expect(html).toContain('Sanatçılar');
+    expect(html).toContain('card-grid');
+    expect(html).not.toContain('card-title');
+  });
+  it('buildLibraryArtistsSection renders name cards without sub', () => {
+    const html = buildLibraryArtistsSection([
+      { browseId: 'a1', thumbnail: 'i.jpg', name: 'Sanatçı' },
+    ]);
+    expect(html).toContain('data-browse="a1"');
+    expect(html).toContain('src="i.jpg"');
+    expect(html).toContain('Sanatçı');
+    expect(html).not.toContain('card-sub');
   });
 });
 
