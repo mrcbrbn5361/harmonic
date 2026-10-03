@@ -199,7 +199,7 @@ describe('loadLyrics', () => {
 
   it('synced satır tıklaması doğru sürede seek yapar', async () => {
     const line = makeLineEl('2.5');
-    bodyEl.querySelectorAll = vi.fn(() => [line] as unknown as NodeListOf<Element>);
+    bodyEl.querySelectorAll = vi.fn(() => [line] as unknown[]);
     stateModule.state.currentSong = makeSong('s1');
     stateModule.state.currentLyrics = '[00:02.50] Merhaba';
     stateModule.state.panelOpen = null;
@@ -219,7 +219,7 @@ describe('loadLyrics', () => {
 describe('syncActiveLyric', () => {
   it('panel açıksa aktif satırı işaretler ve bot sunucusuna anlık satırı aktarır', async () => {
     const lines = [makeLineEl(), makeLineEl()];
-    bodyEl.querySelectorAll = vi.fn(() => lines as unknown as NodeListOf<Element>);
+    bodyEl.querySelectorAll = vi.fn(() => lines as unknown[]);
     bodyEl.querySelector = vi.fn((sel: string) =>
       sel === '.lyric-line.synced[data-idx="0"]' ? (lines[0] as unknown as HTMLElement) : null
     );
