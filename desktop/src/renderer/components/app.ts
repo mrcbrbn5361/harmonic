@@ -153,6 +153,13 @@ import {
   resolveImportFailureWithVerify,
   normalizeUserName,
   buildChromeImportModalHtml,
+  buildExternalLoginModalHtml,
+  resolveExternalLoginErrorText,
+  resolveExternalLoginStatusText,
+  shouldAutoImportExternal,
+  formatExternalCountdown,
+  EXTERNAL_LOGIN_TTL_SEC,
+  EXTERNAL_LOGIN_POLL_MS,
   MEDIA_SEEK_STEP,
   shouldHandleMediaSeek,
   buildMediaArtwork,
@@ -312,6 +319,14 @@ import {
     const startWelcomeBtn = $('#btnStartWelcome');
 
     async function doLoginMusic() {
+      // Birincil yol: harici tarayıcı + loopback polling. Başarısızsa gömülü pencereye düş.
+      try {
+        const ext = await (api.auth as any).externalLoginStart?.();
+        if (ext?.ok && ext?.loginId) {
+          showExternalLoginPrompt(ext);
+          return;
+        }
+      } catch {}
       showToast(CHROME_LOGIN_TOAST, 'info');
       const opened = await api.auth.loginMusic();
       if (isLoginOpenFailure(opened)) {
@@ -365,6 +380,164 @@ import {
           setTimeout(close, 1500);
         } else { let verify = false; try { const ls = await api.auth.getLoginState?.(); verify = !!ls?.verifyChallenge; } catch {} status.textContent = resolveImportFailureWithVerify(r?.error, verify); status.style.color = 'var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
       } catch(e:any){ status.textContent=isImportWindowClosedError(e)?IMPORT_WINDOW_CLOSED_TR:buildImportExceptionText(e); status.style.color='var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
+    });
+  }
+
+  function showExternalLoginPrompt(start: { loginId: string; nonce?: string; linkUrl: string; musicUrl: string; expiresInSec?: number }) {
+    const existing = document.getElementById('chromeImportModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.id = 'chromeImportModal';
+    modal.className = 'modal-overlay visible';
+    modal.innerHTML = buildExternalLoginModalHtml(start.linkUrl, start.musicUrl);
+    document.body.appendChild(modal);
+
+    const status = modal.querySelector('#importStatus') as HTMLElement;
+    const countdownEl = modal.querySelector('#externalCountdown') as HTMLElement;
+    const importBtn = modal.querySelector('#doChromeImport') as HTMLButtonElement;
+    let remaining = start.expiresInSec || EXTERNAL_LOGIN_TTL_SEC;
+    let closed = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      try { clearInterval(pollTimer); } catch {}
+      try { clearInterval(countTimer); } catch {}
+      try { (api.auth as any).externalLoginCancel?.(start.loginId)?.catch?.(() => {}); } catch {}
+      modal.remove();
+    };
+    modal.querySelector('#closeExternalLogin')?.addEventListener('click', close);
+    modal.querySelector('#cancelExternalLogin')?.addEventListener('click', close);
+    modal.querySelector('#copyExternalLink')?.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(start.linkUrl);
+        showToast('Bağlantı kopyalandı.', 'success');
+      } catch { showToast('Kopyalama başarısız.', 'error'); }
+    });
+    modal.querySelector('#openExternalBrowser')?.addEventListener('click', async () => {
+      try { await api.shell.openExternal(start.musicUrl); }
+      catch { window.open(start.musicUrl, '_blank'); }
+    });
+
+    // Sayaç (mm:ss) + otomatik-kapatma süresi dolunca.
+    const countTimer = setInterval(() => {
+      remaining = Math.max(0, remaining - 1);
+      if (countdownEl) countdownEl.textContent = formatExternalCountdown(remaining);
+      if (remaining <= 0) {
+        status.textContent = resolveExternalLoginStatusText('suresi-doldu');
+        status.style.color = 'var(--c-error)';
+        setTimeout(close, 2000);
+      }
+    }, 1000);
+
+    // Tam-otomatik: tespit sonrası tek seferlik import (manuel buton yedek kalır).
+    let autoTried = false;
+    let autoInFlight = false;
+    const runExternalImport = async (auto: boolean) => {
+      if (auto) { if (autoTried || autoInFlight) return; autoTried = true; autoInFlight = true; }
+      importBtn.disabled = true; importBtn.textContent = 'Aktarılıyor...'; status.textContent = 'Hesap doğrulanıyor...';
+      try {
+        const r = await (api.auth as any).externalLoginImport?.(start.loginId, (start as any).nonce);
+        if (r?.success) {
+          state.isLoggedIn = true; state.user = await api.auth.getMusicUser(); updateAuthUI();
+          status.textContent = buildImportSuccessText(state.user?.name, r.cookies);
+          status.style.color = 'var(--c-success)';
+          await checkAuthState(); updateAuthUI(); loadHome();
+          setTimeout(close, 1500);
+          return;
+        }
+        // E_NO_COOKIE/E_VERIFY ayrımı kullanıcı metniyle gösterilir.
+        if (r?.error) {
+          status.textContent = resolveExternalLoginErrorText(r.error);
+        } else {
+          let verify = false;
+          try { const ls = await api.auth.getLoginState?.(); verify = !!ls?.verifyChallenge; } catch {}
+          status.textContent = resolveImportFailureWithVerify(r?.error, verify);
+        }
+        status.style.color = 'var(--c-error)';
+        importBtn.disabled = false; importBtn.textContent = 'Tekrar Dene';
+      } catch (e: any) {
+        status.textContent = isImportWindowClosedError(e) ? IMPORT_WINDOW_CLOSED_TR : buildImportExceptionText(e);
+        status.style.color = 'var(--c-error)';
+        importBtn.disabled = false; importBtn.textContent = 'Tekrar Dene';
+      } finally {
+        if (auto) autoInFlight = false;
+      }
+    };
+
+    // Polling: harici hedef tespitini yokla (2sn).
+    const pollTimer = setInterval(async () => {
+      if (closed) return;
+      try {
+        const st = await (api.auth as any).externalLoginStatus?.(start.loginId, (start as any).nonce);
+        if (!st) return;
+        if (st.state === 'tespit-edildi') {
+          status.textContent = resolveExternalLoginStatusText(st.state, st.expiresInSec);
+          status.style.color = 'var(--c-success)';
+          importBtn.disabled = false;
+          // Tespit sonrası tam-otomatik giriş (tek seferlik).
+          if (shouldAutoImportExternal(st.state, autoTried, autoInFlight)) {
+            status.textContent = 'YouTube Music sekmesi bulundu, giriş aktarılıyor...';
+            await runExternalImport(true);
+          }
+        } else if (st.state === 'suresi-doldu') {
+          status.textContent = resolveExternalLoginStatusText(st.state);
+          status.style.color = 'var(--c-error)';
+          setTimeout(close, 2000);
+        } else {
+          const msg = st.error && st.error !== 'E_NO_TARGET' ? resolveExternalLoginErrorText(st.error) : resolveExternalLoginStatusText(st.state, st.expiresInSec);
+          status.textContent = msg;
+          if (countdownEl && typeof st.expiresInSec === 'number') countdownEl.textContent = formatExternalCountdown(st.expiresInSec);
+        }
+      } catch {}
+    }, EXTERNAL_LOGIN_POLL_MS);
+
+    // Harici oturum tamamlanınca otomatik kapat (main auth:externalLoginDone).
+    try {
+      (api.auth as any).onExternalLoginDone?.(() => {
+        if (!closed) { status.textContent = 'Giriş tamamlandı.'; setTimeout(close, 1200); }
+      });
+    } catch {}
+
+    importBtn?.addEventListener('click', async () => {
+      // Önce harici import (nonce'lu), E_NO_TARGET ise gömülü yedeğe düş.
+      try {
+        const r = await (api.auth as any).externalLoginImport?.(start.loginId, (start as any).nonce);
+        if (r?.success) {
+          state.isLoggedIn = true; state.user = await api.auth.getMusicUser(); updateAuthUI();
+          status.textContent = buildImportSuccessText(state.user?.name, r.cookies);
+          status.style.color = 'var(--c-success)';
+          await checkAuthState(); updateAuthUI(); loadHome();
+          setTimeout(close, 1500);
+          return;
+        }
+        if (r?.error && r.error !== 'E_NO_TARGET') {
+          status.textContent = resolveExternalLoginErrorText(r.error);
+          status.style.color = 'var(--c-error)';
+          importBtn.disabled = false; importBtn.textContent = 'Tekrar Dene';
+          return;
+        }
+      } catch {}
+      importBtn.disabled = true; importBtn.textContent = 'Aktarılıyor...'; status.textContent = 'Hesap doğrulanıyor...';
+      try {
+        const r = await api.auth.importFromChrome();
+        if (r?.success) {
+          state.isLoggedIn = true; state.user = await api.auth.getMusicUser(); updateAuthUI();
+          status.textContent = buildImportSuccessText(state.user?.name, r.cookies);
+          status.style.color = 'var(--c-success)';
+          await checkAuthState(); updateAuthUI(); loadHome();
+          setTimeout(close, 1500);
+        } else {
+          let verify = false;
+          try { const ls = await api.auth.getLoginState?.(); verify = !!ls?.verifyChallenge; } catch {}
+          status.textContent = resolveImportFailureWithVerify(r?.error, verify);
+          status.style.color = 'var(--c-error)';
+          importBtn.disabled = false; importBtn.textContent = 'Tekrar Dene';
+        }
+      } catch (e: any) {
+        status.textContent = isImportWindowClosedError(e) ? IMPORT_WINDOW_CLOSED_TR : buildImportExceptionText(e);
+        status.style.color = 'var(--c-error)';
+        importBtn.disabled = false; importBtn.textContent = 'Tekrar Dene';
+      }
     });
   }
 

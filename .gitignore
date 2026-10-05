@@ -1,3 +1,17 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.key
+*.p12
+*.pfx
+CSC_LINK
+CSC_KEY_PASSWORD
+WIN_CSC_LINK
+APPLE_ID
+APPLE_APP_SPECIFIC_PASSWORD
+APPLE_TEAM_ID
+
 # Ignore Electron app artifacts
 node_modules/
 harmonic-store-backup/
@@ -10,6 +24,7 @@ desktop/*.log
 desktop/smoke-*
 desktop/test-*
 desktop/coverage/
+coverage/
 
 # Ignore git credentials
 .gitcredentials

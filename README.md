@@ -6,8 +6,8 @@
 
 <sub>Proje henüz tamamlama aşamasında. Beklenmedik davranışlar, eksik özellikler veya hatalar olabilir. Katkılar ve özelleştirmeler memmunedir.</sub>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/harmonic-app/harmonic/blob/main/LICENSE)
-[![Version: 1.0.1](https://img.shields.io/badge/Version-1.0.1-blue.svg)](https://github.com/harmonic-app/harmonic/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mrcbrbn5361/harmonic/blob/main/LICENSE)
+[![Version: 1.0.1](https://img.shields.io/badge/Version-1.0.1-blue.svg)](https://github.com/mrcbrbn5361/harmonic/)
 
 ## Overview
 
@@ -137,11 +137,11 @@ Bu proje açık kaynaklı olup, kişisel kullanım, fork'lenme ve özelleştirme
 - `website/` klasöründeki HTML/CSS sayfaları kendi taramanız için uyarlanabilir
 - `package.json` workspace'lar ve script'ler projenizin ihtiyaçlarına göre yeniden yapılandırılabilir
 
-Projeye katkıda bulunmak veya bug raporu vermek için [GitHub Issues](https://github.com/harmonic-app/harmonic/issues) sayfasına göz atabilirsiniz.
+Projeye katkıda bulunmak veya bug raporu vermek için [GitHub Issues](https://github.com/mrcbrbn5361/harmonic/issues) sayfasına göz atabilirsiniz.
 
 <sub>Bu README, projenin "WORK IN PROGRESS" olarak işaretlenmesi amacıyla güncellenmiştir. Proje henüz tam olarak test edilmemiş ve tüm özelliklerinin eksik olabileceği bir aşamada bulunuyor.</sub>
 
 ## Contact
 
-- GitHub: [https://github.com/harmonic-app/harmonic](https://github.com/harmonic-app/harmonic)
-- Issues: [https://github.com/harmonic-app/harmonic/issues](https://github.com/harmonic-app/harmonic/issues)
+- GitHub: [https://github.com/mrcbrbn5361/harmonic](https://github.com/mrcbrbn5361/harmonic)
+- Issues: [https://github.com/mrcbrbn5361/harmonic/issues](https://github.com/mrcbrbn5361/harmonic/issues)

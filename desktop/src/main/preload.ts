@@ -49,6 +49,15 @@ const api = {
     loginMusic: () => ipcRenderer.invoke('auth:openChromeLogin'),
     getLoginState: () => ipcRenderer.invoke('auth:getLoginState'),
     importFromChrome: () => ipcRenderer.invoke('auth:importFromChrome'),
+    externalLoginStart: () => ipcRenderer.invoke('auth:externalLoginStart'),
+    externalLoginStatus: (loginId: string, nonce?: string) => ipcRenderer.invoke('auth:externalLoginStatus', loginId, nonce),
+    externalLoginImport: (loginId: string, nonce?: string) => ipcRenderer.invoke('auth:externalLoginImport', loginId, nonce),
+    externalLoginCancel: (loginId: string) => ipcRenderer.invoke('auth:externalLoginCancel', loginId),
+    onExternalLoginDone: (cb: (u: any) => void) => {
+      const h = (_: unknown, u: any) => cb(u);
+      ipcRenderer.on('auth:externalLoginDone', h);
+      return () => ipcRenderer.removeListener('auth:externalLoginDone', h);
+    },
     logoutMusic: () => ipcRenderer.invoke('auth:logoutMusic'),
     isMusicAuthenticated: () => ipcRenderer.invoke('auth:isMusicAuthenticated'),
     getMusicUser: () => ipcRenderer.invoke('auth:getMusicUser')

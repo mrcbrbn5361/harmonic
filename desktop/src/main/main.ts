@@ -6,6 +6,7 @@ import { DiscordRPC } from './utils/discord';
 import { DiscordOAuth } from './auth/discord-oauth';
 import { GoogleOAuth } from './auth/google-oauth';
 import { MusicAuth } from './auth/music-auth';
+import { ExternalLoginManager } from './auth/external-login';
 import { StreamResolver } from './api/stream-resolver';
 import { authProvider } from './providers/auth-provider';
 import { volumeRatioProvider } from './providers/volume-ratio';
@@ -29,6 +30,7 @@ let discordRPC: DiscordRPC;
 let discordOAuth: DiscordOAuth;
 let googleAuth: GoogleOAuth;
 let musicAuth: MusicAuth;
+let externalLogin: ExternalLoginManager;
 let streamResolver: StreamResolver;
 let botServer: BotServer;
 let resolverListenerSet = false;
@@ -446,6 +448,28 @@ function setupIPC(): void {
   });
 
   // ── YouTube Music cookie girişi IPC ──────────
+  // Birincil yol: harici tarayıcı + loopback polling (external-login).
+  // İkincil yol: gömülü login penceresi (challenge'a düşebilir).
+  ipcMain.handle('auth:externalLoginStart', async () => {
+    return await externalLogin.start();
+  });
+  ipcMain.handle('auth:externalLoginStatus', async (_, loginId: string, nonce?: string) => {
+    return await externalLogin.status(String(loginId || ''), nonce);
+  });
+  ipcMain.handle('auth:externalLoginImport', async (_, loginId: string, nonce?: string) => {
+    const r: any = await externalLogin.import(String(loginId || ''), nonce);
+    if (r?.success) {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('auth:externalLoginDone', { success: true, user: musicAuth.getUser(), cookies: r.cookies });
+        }
+      } catch {}
+    }
+    return r;
+  });
+  ipcMain.handle('auth:externalLoginCancel', (_, loginId: string) => {
+    return externalLogin.cancel(String(loginId || ''));
+  });
   ipcMain.handle('auth:openChromeLogin', async () => {
     return await musicAuth.openChromeLogin();
   });
@@ -480,6 +504,11 @@ function setupIPC(): void {
         }
       } catch {}
       // En son kaydedilen kullanıcıyı dön (importFromChrome zaten kaydetti)
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('auth:externalLoginDone', { success: true, user: musicAuth.getUser() });
+        }
+      } catch {}
       return { success: true, cookies: result.cookies, user: musicAuth.getUser() };
     }
     return result;
@@ -652,6 +681,7 @@ app.whenReady().then(async () => {
   storeManager = new StoreManager();
   googleAuth = new GoogleOAuth();
   musicAuth = new MusicAuth();
+  externalLogin = new ExternalLoginManager(musicAuth);
   streamResolver = new StreamResolver();
   youtubeAPI = new YouTubeAPI();
   youtubeAPI.setCookieProvider(async () => await musicAuth.getCookieString());

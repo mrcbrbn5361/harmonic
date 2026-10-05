@@ -76,6 +76,13 @@ import {
   resolvePreviewEffDuration,
   previewProgressPct,
   buildBotRecs,
+  EXTERNAL_LOGIN_TTL_SEC,
+  EXTERNAL_LOGIN_POLL_MS,
+  resolveExternalLoginErrorText,
+  resolveExternalLoginStatusText,
+  shouldAutoImportExternal,
+  formatExternalCountdown,
+  buildExternalLoginModalHtml,
 } from './system';
 
 describe('auth / chrome import', () => {
@@ -351,5 +358,49 @@ describe('boot / init', () => {
     expect(shouldRestoreRepeat('')).toBe(false);
     expect(REPEAT_ONE_BUTTON_HTML).toContain('<text');
     expect(collectRegistrySongs({ a: { id: 'a' } as never, b: {} as never }).length).toBe(1);
+  });
+});
+
+describe('external login helpers', () => {
+  it('exposes ttl + poll constants', () => {
+    expect(EXTERNAL_LOGIN_TTL_SEC).toBe(300);
+    expect(EXTERNAL_LOGIN_POLL_MS).toBe(2000);
+  });
+  it('resolves all error branches', () => {
+    expect(resolveExternalLoginErrorText('E_NO_TARGET')).toContain('music.youtube.com');
+    expect(resolveExternalLoginErrorText('E_NO_COOKIE')).toContain('cookie');
+    expect(resolveExternalLoginErrorText('E_VERIFY')).toBe(VERIFY_HELP_TR);
+    expect(resolveExternalLoginErrorText('E_PORT_BUSY')).toContain('Yerel');
+    expect(resolveExternalLoginErrorText('E_STRICT_FAIL')).toContain('süresi doldu');
+    expect(resolveExternalLoginErrorText('boom')).toContain('boom');
+  });
+  it('resolves status text incl. remaining seconds', () => {
+    expect(resolveExternalLoginStatusText('tespit-edildi', 12)).toContain('Girişi Aktar');
+    expect(resolveExternalLoginStatusText('tespit-edildi', 12)).toContain('12sn');
+    expect(resolveExternalLoginStatusText('suresi-doldu')).toContain('süresi doldu');
+    expect(resolveExternalLoginStatusText('iptal')).toContain('iptal');
+    expect(resolveExternalLoginStatusText('bekliyor', 5)).toContain('bekleniyor');
+  });
+  it('guards single-shot auto import', () => {
+    expect(shouldAutoImportExternal('tespit-edildi', false, false)).toBe(true);
+    expect(shouldAutoImportExternal('tespit-edildi', true, false)).toBe(false);
+    expect(shouldAutoImportExternal('tespit-edildi', false, true)).toBe(false);
+    expect(shouldAutoImportExternal('bekliyor', false, false)).toBe(false);
+  });
+  it('formats mm:ss countdown with clamp', () => {
+    expect(formatExternalCountdown(300)).toBe('05:00');
+    expect(formatExternalCountdown(61)).toBe('01:01');
+    expect(formatExternalCountdown(0)).toBe('00:00');
+    expect(formatExternalCountdown(-5)).toBe('00:00');
+  });
+  it('builds modal with escaped link + ids + live region', () => {
+    const html = buildExternalLoginModalHtml('http://127.0.0.1:1/l/<x>', 'https://music.youtube.com');
+    expect(html).toContain('Tarayıcında Giriş Yap');
+    expect(html).not.toContain('<x>');
+    expect(html).toContain('id="externalLoginLink"');
+    expect(html).toContain('id="copyExternalLink"');
+    expect(html).toContain('id="openExternalBrowser"');
+    expect(html).toContain('id="importStatus"');
+    expect(html).toContain('role="status"');
   });
 });

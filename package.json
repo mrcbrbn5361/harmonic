@@ -21,7 +21,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/harmonic-app/harmonic"
+    "url": "https://github.com/mrcbrbn5361/harmonic"
   },
   "devDependencies": {
     "7zip-bin": "^5.2.0",

@@ -120,6 +120,85 @@ export function buildChromeImportModalHtml(hasExt: boolean): string {
     `;
 }
 
+/* ── Harici-link login (birincil yol) ────── */
+
+/** Harici giriş sayaç tavanı (main EXTERNAL_LOGIN_TTL_MS ile birebir: 5dk). */
+export const EXTERNAL_LOGIN_TTL_SEC = 300;
+/** Harici giriş durum yoklama aralığı (2sn). */
+export const EXTERNAL_LOGIN_POLL_MS = 2000;
+
+/** Harici giriş hata kodu → kullanıcı metni (main E_* kodları ile birebir). */
+export function resolveExternalLoginErrorText(error: unknown): string {
+  switch (String(error || '')) {
+    case 'E_NO_TARGET':
+      return 'Henüz YouTube Music sekmesi bulunamadı. Tarayıcıda music.youtube.com açık olmalı.';
+    case 'E_NO_COOKIE':
+      return 'Chrome sekmesinde YouTube/Google cookie bulunamadı. Giriş yaptığınızdan emin olun.';
+    case 'E_VERIFY':
+      return VERIFY_HELP_TR;
+    case 'E_PORT_BUSY':
+      return 'Yerel bağlantı noktası açılamadı. Tekrar deneyin.';
+    case 'E_STRICT_FAIL':
+      return 'Bağlantı doğrulanamadı veya süresi doldu. Yeniden başlatın.';
+    default:
+      return buildImportFailureText(error);
+  }
+}
+
+/** Harici giriş durum satırı (bekliyor/tespit-edildi/suresi-doldu). */
+export function resolveExternalLoginStatusText(
+  state: string,
+  expiresInSec?: number,
+): string {
+  const left = typeof expiresInSec === 'number' ? ` (kalan ${expiresInSec}sn)` : '';
+  if (state === 'tespit-edildi') return `YouTube Music sekmesi tespit edildi${left}. "Girişi Aktar"a basın.`;
+  if (state === 'suresi-doldu') return 'Bağlantının süresi doldu. Yeniden başlatın.';
+  if (state === 'iptal') return 'Giriş iptal edildi.';
+  return `Tarayıcıda giriş bekleniyor${left}...`;
+}
+
+/** Tespit sonrası tam-otomatik import guard'ı: tek seferlik, uçuşta değilken. */
+export function shouldAutoImportExternal(
+  state: string,
+  alreadyTried: boolean,
+  inFlight: boolean,
+): boolean {
+  return state === 'tespit-edildi' && !alreadyTried && !inFlight;
+}
+
+/** Kalan süre metni (sayaç — mm:ss). */
+export function formatExternalCountdown(totalSec: number): string {
+  const s = Math.max(0, Math.floor(totalSec));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Harici giriş modal gövdesi: salt-okunur link + [Bağlantıyı Kopyala]/[Tarayıcıda Aç]. */
+export function buildExternalLoginModalHtml(linkUrl: string, musicUrl: string): string {
+  return `
+      <div class="modal" style="max-width:560px">
+        <div class="modal-header">
+          <h3>Tarayıcında Giriş Yap</h3>
+          <button class="icon-btn" id="closeExternalLogin"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        </div>
+        <div class="modal-body" style="padding:16px 20px">
+          <p style="margin:0 0 12px;color:var(--c-text-1);line-height:1.5">Harici tarayıcında <strong>music.youtube.com</strong> adresine giriş yap, sonra buraya dönüp <strong>Girişi Aktar</strong>'a bas. Gömülü pencere açılmaz.</p>
+          <label for="externalLoginLink" style="display:block;font-size:12px;color:var(--c-text-2);margin-bottom:4px">Bilgi bağlantısı (salt-okunur, token içermez)</label>
+          <input id="externalLoginLink" readonly value="${escapeHtml(linkUrl)}" style="width:100%;padding:8px;border-radius:6px;background:var(--c-bg-2);border:1px solid var(--c-border);color:var(--c-text-2);font-size:12px" />
+          <div style="display:flex;gap:8px;margin:10px 0">
+            <button class="btn btn-ghost" id="copyExternalLink">Bağlantıyı Kopyala</button>
+            <button class="btn btn-ghost" id="openExternalBrowser">Tarayıcıda Aç</button>
+            <span id="externalCountdown" style="margin-left:auto;font-size:12px;color:var(--c-text-2)">05:00</span>
+          </div>
+          <div id="importStatus" role="status" aria-live="polite" style="padding:10px;border-radius:6px;background:var(--c-bg-2);font-size:13px;color:var(--c-text-2);min-height:18px">Tarayıcıda giriş bekleniyor...</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="cancelExternalLogin">İptal</button>
+          <button class="btn btn-primary" id="doChromeImport">Girişi Aktar</button>
+        </div>
+      </div>
+    `;
+}
+
 /* ── Media session ────────────────────────── */
 
 /** Medya tuşu kaydırma adımı (app.ts seekbackward/forward ile birebir). */
