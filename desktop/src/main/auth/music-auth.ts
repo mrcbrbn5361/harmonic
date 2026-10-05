@@ -1,5 +1,4 @@
 import { BrowserWindow, session, Session, shell } from 'electron';
-import { spawn } from 'child_process';
 import * as fs from 'fs';
 import Store from 'electron-store';
 import CDP from 'chrome-remote-interface';
@@ -19,6 +18,63 @@ const CHROME_DEBUG_PORTS = [9222, 9333]; // Önce varsayılan 9222 (hedef: doğr
 import { CHROME_UA, YT_CLIENT_VERSION } from '../api/client-versions';
 export { CHROME_UA };
 
+// "Kimliğinizi doğrulayın" / challenge döngüsü tespiti (TEK KAYNAK — main tarafı).
+// Login penceresi bu URL'lere düşerse cookie akışı ilerlemez:
+// kullanıcı normal Chrome'da tamamlayıp "Girişi Aktar"a basmalıdır.
+const VERIFY_URL_PATTERNS = [
+  '/signin/v2/challenge',
+  '/signin/challenge',
+  '/signin/rejected',
+  'signin/v2/verify',
+  'challenge/pwd',
+  'challenge/az',
+  'reauth',
+  'verify-it-is-you',
+  'verifyit',
+];
+export function isVerifyChallengeUrl(raw: string | undefined | null): boolean {
+  if (!raw || typeof raw !== 'string') return false;
+  const u = raw.toLowerCase();
+  if (!u.includes('accounts.google.com') && !u.includes('accounts.youtube.com')) return false;
+  return VERIFY_URL_PATTERNS.some((p) => u.includes(p));
+}
+
+// Verify ekranında gösterilecek yönlendirme (renderer copy ile birebir tutulmalı).
+export const VERIFY_HELP_TR =
+  "Google kimliğinizi doğrulamanızı istiyor. 1) Normal Chrome'da music.youtube.com adresine giriş yapın. 2) Buraya dönüp 'Girişi Aktar' düğmesini kullanın.";
+
+// ── Auth hardening (İsmail Dede 1-4): TEK KAYNAK allowlist'ler ──
+// Login penceresi + CDP hedefleri yalnızca bu host'lara dokunur; cookie
+// yazımı da yalnızca bu domain'lerden kabul edilir. M-12 korunur:
+// UA/client sürümleri client-versions.ts'ten gelir, burada tekrar yazılmaz.
+const ALLOWED_AUTH_HOSTS = [
+  'music.youtube.com',
+  'www.youtube.com',
+  'youtube.com',
+  'accounts.google.com',
+  'accounts.youtube.com',
+];
+const ALLOWED_COOKIE_DOMAIN_RE =
+  /(^|\.)(youtube\.com|music\.youtube\.com|google\.com|accounts\.google\.com|accounts\.youtube\.com|googleusercontent\.com|ggpht\.com)$/i;
+
+function getHost(raw: string | undefined | null): string {
+  try {
+    if (!raw) return '';
+    return new URL(String(raw)).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+export function isAllowedAuthUrl(raw: string | undefined | null): boolean {
+  const host = getHost(raw);
+  if (!host) return false;
+  return ALLOWED_AUTH_HOSTS.some((h) => host === h || host.endsWith('.' + h));
+}
+function isAllowedCookieDomain(raw: string | undefined | null): boolean {
+  if (!raw || typeof raw !== 'string') return false;
+  const d = raw.toLowerCase().replace(/^\./, '');
+  return ALLOWED_COOKIE_DOMAIN_RE.test(d) || ALLOWED_COOKIE_DOMAIN_RE.test('.' + d);
+}
 // Geçersiz hesap isimlerini filtrele
 const INVALID_NAMES = /^(guide|hamburger|menu|account|hesap|profil|open guide|rehber|kläravuz|youtube music)$/i;
 export function sanitizeName(name: string | undefined | null): string {
@@ -62,9 +118,13 @@ export class MusicAuth {
     const ses = this.getSession();
     ses.webRequest.onBeforeSendHeaders((details, cb) => {
       const h = details.requestHeaders;
-      h['Sec-CH-UA'] = '"Chromium";v="126", "Google Chrome";v="126", "Not.A/Brand";v="8"';
+      h['Sec-CH-UA'] = '"Chromium";v="131", "Google Chrome";v="131", "Not.A/Brand";v="24"';
       h['Sec-CH-UA-Mobile'] = '?0';
       h['Sec-CH-UA-Platform'] = '"Windows"';
+      h['Sec-CH-UA-Arch'] = '"x86"';
+      h['Sec-CH-UA-Bitness'] = '"64"';
+      h['Sec-CH-UA-Model'] = '""';
+      h['Sec-CH-UA-Full-Version-List'] = '"Chromium";v="131.0.6778.0", "Google Chrome";v="131.0.6778.0", "Not.A/Brand";v="24.0.0.0"';
       h['Accept-Language'] = h['Accept-Language'] || 'tr-TR,tr;q=0.9,en;q=0.8';
       h['Accept'] = h['Accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8';
       (h as any)['X-Client-Data'] = (h as any)['X-Client-Data'] || 'CJW2yQEIpLbJAQimtskBCKmdygEIv6HKAQ==';
@@ -97,8 +157,26 @@ export class MusicAuth {
     const cookies = await this.getCookies();
     const now = Date.now() / 1000;
     // LOGIN_INFO: giriş bayrağı, SAPISID: oturum bütünlüğü — expired olanları sayma
-    return cookies.some((c) => c.name === 'LOGIN_INFO' && !c.value.includes('TAKEN_BY') && (!c.expirationDate || c.expirationDate > now)) ||
-           cookies.some((c) => c.name === 'SAPISID' && (!c.expirationDate || c.expirationDate > now));
+    const loginOk = cookies.some((c) => c.name === 'LOGIN_INFO' && !c.value.includes('TAKEN_BY') && (!c.expirationDate || c.expirationDate > now));
+    const sapiOk = cookies.some((c) => c.name === 'SAPISID' && (!c.expirationDate || c.expirationDate > now));
+    // Restart-kanıtı: oturum sağlığı loglanır (SAPISID/LOGIN_INFO yaşıyor mu?)
+    logger.debug(`[Auth] Oturum sağlığı: cookie=${cookies.length} LOGIN_INFO=${loginOk} SAPISID=${sapiOk}`);
+    return loginOk || sapiOk;
+  }
+
+  // Giriş penceresi durumu: renderer "Chrome'da tamamla" dalını bununla seçer.
+  getLoginWindowUrl(): string | null {
+    try {
+      if (this.loginWindow && !this.loginWindow.isDestroyed()) return this.loginWindow.webContents.getURL() || null;
+    } catch {}
+    return null;
+  }
+
+  getLoginState(): { open: boolean; url: string | null; verifyChallenge: boolean; help?: string } {
+    const url = this.getLoginWindowUrl();
+    const verifyChallenge = isVerifyChallengeUrl(url);
+    if (verifyChallenge) logger.warn('[Auth] Verify/challenge ekranı tespit edildi:', url);
+    return { open: url !== null, url, verifyChallenge, help: verifyChallenge ? VERIFY_HELP_TR : undefined };
   }
 
   getUser(): MusicUser | null {
@@ -186,7 +264,10 @@ export class MusicAuth {
   // 1) Ayrı profille Chrome'u --remote-debugging-port=9222 ile başlat
   //    (kullanıcının ana Chrome'una dokunmaz, giriş yapması gerekir)
   // 2) "Girişi Aktar" — CDP üzerinden cookie'leri çekip Electron session'a yazar
-  getLoginUrl(): string { return 'https://accounts.google.com/ServiceLogin?ltmpl=music&service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fwww.youtube.com%2Fsignin%3Faction_handle_signin%3Dtrue%26app%3Ddesktop%26hl%3Dtr%26next%3Dhttps%253A%252F%252Fmusic.youtube.com%252F%26feature%3Dgps&hl=tr'; }
+  // Giriş ürün yüzeyinden başlar (music.youtube.com → Google doğru continue
+  // parametreleriyle yönlendirir). Doğrudan el-yapımı ServiceLogin URL'si
+  // riskli hesapları "Kimliğinizi doğrulayın" ekranına düşürüyordu.
+  getLoginUrl(): string { return 'https://music.youtube.com/'; }
   async findYouTubeMusicTarget(): Promise<{ id: string; url: string } | null> {
     for (const port of CHROME_DEBUG_PORTS) {
       try {
@@ -196,8 +277,31 @@ export class MusicAuth {
         clearTimeout(t);
         if (!res.ok) continue;
         const targets = await res.json() as any[];
-        const hit = targets.find(t => t.type === 'page' && (t.url?.includes('music.youtube.com') || t.title?.toLowerCase().includes('youtube music')));
-        if (hit) return { id: hit.id, url: hit.url };
+        // Hardening: yalnızca page tipi + allowlist host + https hedefleri.
+        const hits = (Array.isArray(targets) ? targets : []).filter((tg) =>
+          tg && tg.type === 'page' && typeof tg.url === 'string' &&
+          tg.url.startsWith('https://') && isAllowedAuthUrl(tg.url));
+        const hit = hits.find(t => getHost(t.url) === 'music.youtube.com')
+          || hits.find(t => (t.url?.includes('music.youtube.com') || t.title?.toLowerCase().includes('youtube music')));
+        if (hit && hit.id) return { id: String(hit.id), url: hit.url };
+      } catch {}
+    }
+    return null;
+  }
+  // CDP strict: targetId /json listesinde allowlist'li bir page'e ait olmalı.
+  private async resolveStrictTarget(targetId: string): Promise<{ port: number; id: string; url: string } | null> {
+    for (const port of CHROME_DEBUG_PORTS) {
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 800);
+        const res = await fetch(`http://127.0.0.1:${port}/json`, { signal: controller.signal } as any);
+        clearTimeout(t);
+        if (!res.ok) continue;
+        const targets = await res.json() as any[];
+        const hit = (Array.isArray(targets) ? targets : []).find((tg) =>
+          tg && String(tg.id) === String(targetId) && tg.type === 'page' &&
+          typeof tg.url === 'string' && tg.url.startsWith('https://') && isAllowedAuthUrl(tg.url));
+        if (hit) return { port, id: String(hit.id), url: hit.url };
       } catch {}
     }
     return null;
@@ -207,11 +311,16 @@ export class MusicAuth {
     return !!target;
   }
   async openChromeLogin(): Promise<{ opened: boolean; error?: string; alreadyRunning?: boolean; url?: string; externalFound?: boolean; targetId?: string }> {
+    // Verify early-return: challenge ekranında yeni akış başlatma, yönlendir.
+    try {
+      const st = this.getLoginState();
+      if (st.verifyChallenge) return { opened: true, alreadyRunning: true, url: st.url || undefined, error: VERIFY_HELP_TR };
+    } catch {}
     const target = await this.findYouTubeMusicTarget();
     if(target){
+      // Hardening: shell interpolasyonu yok — pencere odağı Electron API ile.
       try {
-        const { exec } = await import('child_process');
-        exec(`powershell -NoProfile -Command "$p = Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like '*YouTube*Music*' } | Select-Object -First 1; if ($p) { (New-Object -ComObject WScript.Shell).AppActivate($p.Id) }"`, { timeout: 2000 }, () => {});
+        if (this.loginWindow && !this.loginWindow.isDestroyed()) this.loginWindow.focus();
       } catch {}
       return { opened:true, alreadyRunning:true, url:target.url, externalFound:true, targetId: target.id };
     }
@@ -222,6 +331,38 @@ export class MusicAuth {
         webPreferences: { partition: MUSIC_PARTITION, nodeIntegration:false, contextIsolation:true, sandbox:true }
       });
       try { (this.loginWindow.webContents as any).setUserAgent(CHROME_UA); } catch {}
+      // Hardening: login penceresi allowlist dışı gezintiye kapatıldı.
+      // Allowlist dışı URL'ler pencere içinde yüklenmez (deny) — https ise
+      // sistem tarayıcısında açılır, gerisi sessizce engellenir.
+      try {
+        this.loginWindow.webContents.setWindowOpenHandler(({ url }: { url: string }) => {
+          try {
+            if (isAllowedAuthUrl(url)) return { action: 'allow' as never };
+            if (typeof url === 'string' && url.startsWith('https://')) {
+              try { shell.openExternal(new URL(url).toString()); } catch {}
+            }
+          } catch {}
+          return { action: 'deny' as never };
+        });
+        this.loginWindow.webContents.on('will-navigate' as never, (e: { preventDefault(): void }, url: string) => {
+          try {
+            if (isAllowedAuthUrl(url)) return;
+            e.preventDefault();
+            if (typeof url === 'string' && url.startsWith('https://')) {
+              try { shell.openExternal(new URL(url).toString()); } catch {}
+            }
+          } catch {}
+        });
+      } catch {}
+      // Verify/challenge döngüsü: URL değişimlerini izle, düşünce logla
+      // (renderer auth:getLoginState ile sorgular, "Chrome'da tamamla" dalına geçer).
+      try {
+        const watch = (_e: unknown, url: string) => {
+          try { if (isVerifyChallengeUrl(url)) logger.warn('[Auth] Verify/challenge ekranına düşüldü:', url); } catch {}
+        };
+        this.loginWindow.webContents.on('did-navigate' as never, watch as never);
+        this.loginWindow.webContents.on('did-navigate-in-page' as never, watch as never);
+      } catch {}
       this.loginWindow.loadURL(this.getLoginUrl());
       this.loginWindow.on('closed', ()=> this.loginWindow=null);
       return { opened:true, url:this.getLoginUrl() };
@@ -231,6 +372,11 @@ export class MusicAuth {
   // Artık loginWindow'un kendi session'ında cookie zaten var — direkt profili çekip kapat
   async importFromChrome(): Promise<{ success: boolean; cookies: number; error?: string }> {
     try {
+      // Verify early-return: challenge ekranındayken DOM scraping'e girme.
+      try {
+        const st = this.getLoginState();
+        if (st.verifyChallenge) return { success: false, cookies: 0, error: VERIFY_HELP_TR };
+      } catch {}
       // M-13 Uçtan uca toplam profil çözümleme tavanı kesin olarak <= 5.0 saniye ile sınırlandırılır
       const totalDeadline = Date.now() + 4800;
       const remainingTime = () => Math.max(0, totalDeadline - Date.now());
@@ -250,9 +396,16 @@ export class MusicAuth {
       try {
         if (this.loginWindow && !this.loginWindow.isDestroyed()) {
           // loginWindow music.youtube.com'da değilse oraya git ve header gelene kadar bekle
+          // No auto-bypass: verify/challenge URL'sindeyken gezinmeyi zorlama.
           try {
             const curUrl = this.loginWindow.webContents.getURL() || '';
+            if (isVerifyChallengeUrl(curUrl)) {
+              return { success: false, cookies: cookies.length, error: VERIFY_HELP_TR };
+            }
             if (!curUrl.includes('music.youtube.com')) {
+              if (!isAllowedAuthUrl(curUrl) && curUrl && !curUrl.startsWith('about:') && !curUrl.startsWith('devtools://')) {
+                return { success: false, cookies: cookies.length, error: VERIFY_HELP_TR };
+              }
               await this.loginWindow.webContents.loadURL('https://music.youtube.com/');
               // M-13: sabit 250ms poll yerine olay-tabanlı MutationObserver bekleme (deadline üst sınırı korunur)
               try {
@@ -340,6 +493,11 @@ export class MusicAuth {
   }
   // Dis Chrome'daki acik YouTube Music'i dogrudan target ID ile ice aktar
   async importFromExternalChrome(targetId?: string): Promise<{ success: boolean; cookies: number; error?: string }> {
+    // Verify early-return: login penceresi challenge'daysa dışa aktarımı deneme.
+    try {
+      const st = this.getLoginState();
+      if (st.verifyChallenge) return { success: false, cookies: 0, error: VERIFY_HELP_TR };
+    } catch {}
     const totalDeadline = Date.now() + 4800; // M-13 Uçtan uca toplam tavan <= 5.0 saniye
     if (targetId) {
       const byTarget = await this.importFromTarget(targetId, totalDeadline);
@@ -347,10 +505,13 @@ export class MusicAuth {
         const remaining = totalDeadline - Date.now();
         if (remaining > 500) {
           const prof = await this.fetchProfileViaAPI(remaining).catch(()=>null);
-          if(prof && prof.name) this.store.set('musicUser', { id:'ytmusic', name:prof.name, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
+          // Account confirm: doğrulanmış isim/e-posta yoksa sessizce "başarı" dönme.
+          if(prof && (sanitizeName(prof.name) || prof.email)) this.store.set('musicUser', { id:'ytmusic', name:sanitizeName(prof.name) || prof.email, email:prof.email||'', picture:prof.picture||'', provider:'youtube-music' });
         }
         return byTarget;
       }
+      // Strict hedef doğrulanamazsa legacy'ye düşme — hedefi açıkça reddet.
+      return byTarget;
     }
     const legacy = await this.importFromChromeLegacy(totalDeadline);
     return legacy;
@@ -359,18 +520,21 @@ export class MusicAuth {
     let client: any;
     try {
       if (totalDeadline - Date.now() < 500) throw new Error('timeout');
-      // Once targetId ile baglanmayı dene
-      for (const port of CHROME_DEBUG_PORTS) {
-        try { client = await CDP({ host: '127.0.0.1', port, target: targetId }); if (client) break; } catch {}
-      }
+      // CDP strict: targetId önce /json allowlist doğrulamasından geçer.
+      const strict = await this.resolveStrictTarget(String(targetId));
+      if (!strict) return { success: false, cookies: 0, error: 'Chrome sekmesi doğrulanamadı. Music sekmesi açıkken tekrar deneyin.' };
+      try { client = await CDP({ host: '127.0.0.1', port: strict.port, target: strict.id }); } catch {}
       if (!client) throw new Error('no target');
       const { Network } = client;
       const res = await Network.getCookies();
       const all = res?.cookies || [];
       if (!all.length) return { success:false, cookies:0, error:'Chrome sekmesinde cookie bulunamadı.' };
+      // Cookie domain allowlist: yalnızca Google/YouTube cookie'leri yazılır.
+      const filtered = all.filter((c: any) => isAllowedCookieDomain(c?.domain));
+      if (!filtered.length) return { success: false, cookies: all.length, error: 'Chrome sekmesinde YouTube/Google cookie bulunamadı.' };
       const ses = this.getSession();
       let written=0;
-      for (const c of all) {
+      for (const c of filtered) {
         try {
           const url = `http${c.secure ? 's' : ''}://${c.domain.startsWith('.') ? c.domain.slice(1) : c.domain}${c.path || '/'}`;
           await ses.cookies.set({ url, name:c.name, value:c.value, domain:c.domain, path:c.path||'/', secure:!!c.secure, httpOnly:!!c.httpOnly, sameSite: c.sameSite==='None'?'no_restriction':(c.sameSite==='Strict'?'strict':'lax'), expirationDate: c.expires && c.expires>0 ? Math.floor(c.expires):undefined } as any);
@@ -384,11 +548,13 @@ export class MusicAuth {
     let client: any;
     try {
       if (totalDeadline - Date.now() < 500) throw new Error('timeout');
-      let lastErr:any=null;
-      for (const port of CHROME_DEBUG_PORTS) {
-        try { client = await CDP({ host: '127.0.0.1', port }); if(client) break; } catch(e){ lastErr=e; }
-      }
-      if(!client) throw lastErr;
+      // CDP strict: kök hedefe kör bağlanma yok — allowlist'li music hedefi şart.
+      const strictTarget = await this.findYouTubeMusicTarget().catch(() => null);
+      if (!strictTarget) throw new Error('no verified target');
+      const strict = await this.resolveStrictTarget(strictTarget.id);
+      if (!strict) throw new Error('no verified target');
+      try { client = await CDP({ host: '127.0.0.1', port: strict.port, target: strict.id }); } catch (e) { throw e; }
+      if(!client) throw new Error('no verified target');
     } catch (e: any) {
       return { success: false, cookies: 0, error: 'Chrome\'a bağlanılamadı. Chrome\'u kapatıp tekrar "Giriş Yap" düğmesine basın.' };
     }
@@ -411,9 +577,14 @@ export class MusicAuth {
       if (!all.length) {
         return { success: false, cookies: 0, error: 'Chrome\'da YouTube/Google için cookie bulunamadı. Giriş yaptığınızdan emin olun.' };
       }
+      // Cookie domain allowlist: yalnızca Google/YouTube cookie'leri yazılır.
+      const allowed = all.filter((c: any) => isAllowedCookieDomain(c?.domain));
+      if (!allowed.length) {
+        return { success: false, cookies: all.length, error: 'Chrome sekmesinde YouTube/Google cookie bulunamadı.' };
+      }
       const ses = this.getSession();
       let written = 0;
-      for (const c of all) {
+      for (const c of allowed) {
         try {
           // CDP'den gelen cookie -> Electron formatı
           const url = `http${c.secure ? 's' : ''}://${c.domain.startsWith('.') ? c.domain.slice(1) : c.domain}${c.path || '/'}`;
@@ -449,9 +620,14 @@ export class MusicAuth {
           }
         }
         // Google hesabından gerçek ismi al (YouTube Music API çoğu zaman isim dönmüyor)
+        // Account confirm: isimsiz + e-postasız "başarı" yazma — kullanıcı hangi
+        // hesaba bağlandığını görmeli, yoksa aktarım başarısız sayılır.
         const googleUser = this.store.get('googleUser' as any) as any;
         const realName = sanitizeName(prof?.name) || sanitizeName(googleUser?.name) || '';
         const realEmail = prof?.email || googleUser?.email || '';
+        if (!realName && !realEmail) {
+          return { success: false, cookies: written, error: 'Hesap doğrulanamadı. Chrome\'da music.youtube.com\'da giriş yapıp tekrar deneyin.' };
+        }
         const realPicture = prof?.picture || googleUser?.picture || '';
         const user: MusicUser = {
           id: 'ytmusic',

@@ -45,8 +45,7 @@ import {
   sanitizeName,
   resolveDisplayName,
   toHiResAvatar,
-  getAvatarInitial,
-  getUpcomingContext
+  getAvatarInitial
 } from './views';
 import {
   show,
@@ -72,8 +71,6 @@ import {
   seekTimeFor,
   clampSeekTarget,
   keySeekStep,
-  playIconVisibility,
-  likeFill,
   applyLikeToggle,
   isTypingTarget,
   resolveKeyAction,
@@ -86,9 +83,6 @@ import {
   clampMenuPos,
   copyLinkFor,
   buildPlaylistPickerListHtml,
-  buildQueueHtml,
-  queueIndexAfterUserPick,
-  resolveContextQueuePick,
 } from './panels';
 import {
   cacheLyricsToBotServer,
@@ -96,6 +90,29 @@ import {
   renderLyricsContent,
   syncActiveLyric,
 } from './lyrics-view';
+import {
+  saveLiked,
+  updateLikeBtn,
+  syncLikeButtons,
+} from './like-view';
+import {
+  updatePlayIcon,
+} from './playback-view';
+import {
+  renderQueue as renderQueueView,
+} from './queue-view';
+import {
+  loadHome as loadHomeView,
+} from './home-view';
+import {
+  openBrowse as openBrowseView,
+} from './browse-view';
+import {
+  loadLiked as loadLikedView,
+} from './liked-view';
+import {
+  loadLibrary as loadLibraryView,
+} from './library-view';
 import {
   SEARCH_DEBOUNCE_MS,
   normalizeQuery,
@@ -120,40 +137,7 @@ import {
   resolveSearchSections,
 } from './search-nav';
 import {
-  HOME_CARDS_LIMIT,
-  HOME_SONGS_LIMIT,
-  HOME_QUEUE_LIMIT,
-  RECENT_SONGS_LIMIT,
-  BROWSE_EMPTY_HTML,
-  BROWSE_ERROR_HTML,
-  CONTENT_ERROR_HTML,
-  CONTENT_LOADING_HTML,
-  LIBRARY_ERROR_HTML,
-  LIBRARY_EMPTY_HTML,
-  partitionSongs,
-  partitionBrowseCards,
-  takeFirst,
-  shouldInitHomeQueue,
   isStaleContent,
-  buildCardFor,
-  buildDiscoverSection,
-  buildSongSection,
-  resolveHomeHtml,
-  resolveBrowseContainerId,
-  resolveBrowseBack,
-  buildBrowseHeader,
-  buildBrowseSongsBody,
-  buildBrowseCardsBody,
-  buildLibraryLocalPlaylistsSection,
-  buildLibraryYtPlaylistsSection,
-  buildLibraryAlbumsSection,
-  buildLibraryArtistsSection,
-  normalizeLibraryTab,
-  shouldShowRecentSection,
-  shouldShowPlaylistSection,
-  shouldShowAlbumSection,
-  shouldShowArtistsSection,
-  resolveLibraryEmpty,
   resolveLocalLiked,
   buildLikedHtml,
 } from './content';
@@ -163,8 +147,10 @@ import {
   resolveLoginErrorText,
   hasExternalChrome,
   buildImportSuccessText,
-  buildImportFailureText,
   buildImportExceptionText,
+  IMPORT_WINDOW_CLOSED_TR,
+  isImportWindowClosedError,
+  resolveImportFailureWithVerify,
   normalizeUserName,
   buildChromeImportModalHtml,
   MEDIA_SEEK_STEP,
@@ -377,8 +363,8 @@ import {
           status.style.color = 'var(--c-success)';
           await checkAuthState(); updateAuthUI(); loadHome();
           setTimeout(close, 1500);
-        } else { status.textContent = buildImportFailureText(r?.error); status.style.color = 'var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
-      } catch(e:any){ status.textContent=buildImportExceptionText(e); status.style.color='var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
+        } else { let verify = false; try { const ls = await api.auth.getLoginState?.(); verify = !!ls?.verifyChallenge; } catch {} status.textContent = resolveImportFailureWithVerify(r?.error, verify); status.style.color = 'var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
+      } catch(e:any){ status.textContent=isImportWindowClosedError(e)?IMPORT_WINDOW_CLOSED_TR:buildImportExceptionText(e); status.style.color='var(--c-error)'; btn.disabled=false; btn.textContent='Tekrar Dene'; }
     });
   }
 
@@ -1384,14 +1370,6 @@ import {
     }
   }
 
-function updatePlayIcon() {
-    const playIcon = $('#btnPlay .icon-play') as HTMLElement;
-    const pauseIcon = $('#btnPlay .icon-pause') as HTMLElement;
-    const vis = playIconVisibility(state.playing);
-    playIcon.style.display = vis.play;
-    pauseIcon.style.display = vis.pause;
-  }
-  
   // ── Like ───────────────────────────────────
   function toggleLike(id: string) {
     const song = findSong(id) || (state.currentSong?.id === id ? state.currentSong : undefined);
@@ -1400,28 +1378,8 @@ function updatePlayIcon() {
     if (!wasLiked && song) songRegistry.set(id, song);
     saveLiked();
     updateLikeBtn();
-    $$('.like-btn').forEach((btn) => {
-      if ((btn as HTMLElement).dataset.id === id) {
-        btn.classList.toggle('active', state.liked.has(id));
-        const svg = btn.querySelector('svg');
-        if (svg) svg.setAttribute('fill', likeFill(state.liked.has(id)));
-      }
-    });
+    syncLikeButtons(id);
     if (state.page === 'liked') loadLiked();
-  }
-
-  function updateLikeBtn() {
-    if (!state.currentSong) return;
-    const btn = $('#btnLike');
-    const liked = state.liked.has(state.currentSong.id);
-    btn.classList.toggle('active', liked);
-    const svg = btn.querySelector('svg');
-    if (svg) svg.setAttribute('fill', likeFill(liked));
-  }
-
-  function saveLiked() {
-    api.store.set('likedSongs', Array.from(state.liked));
-    api.store.set('likedSongsDetails', state.likedSongsMap);
   }
 
 
@@ -1580,267 +1538,57 @@ function updatePlayIcon() {
   }
 
   function renderQueue() {
-    const body = $('#queueBody');
-    const contextLabel = state.contextName || 'Bağlam';
-    const upcomingCtx = getUpcomingContext(state.contextQueue, state.currentSong?.id);
-    body.innerHTML = buildQueueHtml(
-      state.userQueue,
-      state.contextQueue.length,
-      upcomingCtx,
-      contextLabel,
-    );
-
-    // Clear user queue
-    const clearBtn = body.querySelector('#clearUserQueue');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', () => {
-        clearUserQueue();
-        renderQueue();
-      });
-    }
-
-    // Queue item click
-    body.querySelectorAll('.queue-item').forEach((item) => {
-      item.addEventListener('click', () => {
-        const type = (item as HTMLElement).dataset.type;
-        const idx = parseInt((item as HTMLElement).dataset.idx!);
-        if (type === 'user') {
-          const song = state.userQueue[idx];
-          if (song) {
-            // Kullanıcı queue'sundan seçildi → tüket, sonraki kaldığı yerden devam etsin
-            state.userQueue.splice(idx, 1);
-            state.queue = rebuildMergedQueue();
-            state.queueIndex = queueIndexAfterUserPick(idx);
-            playSong(song);
-          }
-        } else if (type === 'context') {
-          // idx dilimlenmiş upcomingCtx'e ait — tam dizinden değil dilimden oku
-          const song = resolveContextQueuePick(
-            getUpcomingContext(state.contextQueue, state.currentSong?.id),
-            idx,
-          );
-          if (song) {
-            state.queueIndex = state.queue.findIndex((s) => s.id === song.id);
-            playSong(song);
-          }
-        }
-        renderQueue();
-      });
-    });
+    renderQueueView({ clearUserQueue, playSong });
   }
 
   // ── Home ───────────────────────────────────
   async function loadHome() {
-    const gen = state.navGeneration;
-    const container = $('#homeContent');
-    container.innerHTML = '<div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>';
-
-    try {
-    const data = await ytHome();
-    if (isStaleContent(gen, state.navGeneration)) return; // stale, discard
-    console.log('[Harmonic] Home data:', JSON.stringify({ itemCount: data?.items?.length }));
-    console.log('[Harmonic] Home first item:', data?.items?.[0] ? JSON.stringify(data.items[0]) : 'null');
-
-    if (!data.items?.length) {
-      container.innerHTML = CONTENT_ERROR_HTML;
-      container.querySelector('.btn-retry')?.addEventListener('click', () => loadHome());
-      return;
-    }
-
-    const songs = partitionSongs(data.items ?? []) as Song[];
-    const cards = partitionBrowseCards(data.items ?? []);
-
-    console.log('[Harmonic] Songs:', songs.length, 'Cards:', cards.length);
-
-    let html = '';
-
-    const topCards = takeFirst(cards, HOME_CARDS_LIMIT);
-    if (topCards.length) {
-      html += buildDiscoverSection(topCards.map((c: any) => buildCardFor(c, String(c.artist || ''))).join(''));
-    }
-
-    if (songs.length) {
-      html += buildSongSection('Önerilen Şarkılar', takeFirst(songs, HOME_SONGS_LIMIT).map((s: Song, i: number) => songRow(s, i + 1)).join(''));
-    }
-
-    container.innerHTML = resolveHomeHtml(html);
-
-    // Set queue from songs — sadece şarkı çalmıyorsa VE kuyruk boşsa queue'yu güncelle
-    if (shouldInitHomeQueue(songs.length, !!state.currentSong, state.queue.length)) {
-      setContext(takeFirst(songs, HOME_QUEUE_LIMIT), 'Önerilen Şarkılar', 'home');
-    }
-
-    attachSongEvents(container);
-
-    // Kartlara tıklama → listenin içine gir
-    container.querySelectorAll('.card[data-browse]').forEach((card) => {
-      card.addEventListener('click', () => {
-        const browseId = (card as HTMLElement).dataset.browse;
-        const title = (card as HTMLElement).querySelector('.card-title')?.textContent || '';
-        const thumb = (card as HTMLElement).querySelector('img')?.src || '';
-        if (browseId) openBrowse(browseId, title, thumb);
-      });
+    await loadHomeView({
+      fetchHome: ytHome,
+      renderRow: songRow,
+      wireRowEvents: (c) => attachSongEvents(c),
+      enterContext: (songs, name, type) => setContext(songs, name, type),
+      openBrowse: (id, title, thumb) => openBrowse(id, title, thumb),
+      retry: () => loadHome(),
     });
-    } catch (err) {
-      console.error('[Harmonic] loadHome error:', err);
-      container.innerHTML = CONTENT_ERROR_HTML;
-      container.querySelector('.btn-retry')?.addEventListener('click', () => loadHome());
-    }
   }
 
   async function openBrowse(browseId: string, fallbackTitle?: string, fallbackThumb?: string, onBack?: () => void) {
-    const activePage = state.page;
-    const targetContainer = $(`#${resolveBrowseContainerId(activePage)}`);
-    if (!targetContainer) return;
-
-    targetContainer.innerHTML = CONTENT_LOADING_HTML;
-    try {
-      const browseData = await api.youtube.browse(browseId);
-      const items: any[] = browseData.items || [];
-      const songs = partitionSongs(items) as Song[];
-      const title = browseData.title || fallbackTitle || 'Liste';
-      const thumb = fallbackThumb || '';
-
-      let html = buildBrowseHeader(title, thumb, songs.length);
-
-      if (songs.length) {
-        html += buildBrowseSongsBody(songs.map((s, i) => songRow(s, i + 1)).join(''));
-        setContext(songs, title, 'playlist');
-      } else if (items.length) {
-        const cards = partitionBrowseCards(items);
-        html += buildBrowseCardsBody(cards.map((c: any) => buildCardFor(c, String(c.artist || ''))).join(''));
-      } else {
-        html += BROWSE_EMPTY_HTML;
-      }
-
-      targetContainer.innerHTML = html;
-      attachSongEvents(targetContainer, title, 'playlist');
-
-      targetContainer.querySelector('#btnBrowseBack')?.addEventListener('click', () => {
-        const backTarget = resolveBrowseBack(!!onBack, activePage);
-        if (backTarget === 'callback') {
-          onBack?.();
-        } else if (backTarget === 'search') {
-          const q = ($('#searchInput') as HTMLInputElement)?.value;
-          if (q) doSearch(q);
-        } else if (backTarget === 'library') {
-          loadLibrary();
-        } else {
-          loadHome();
-        }
-      });
-
-      // Alt kartlara tıklandığında kendi browseId'siyle açılsın (sonsuz döngü engellendi)
-      targetContainer.querySelectorAll('.card[data-browse]').forEach((subCard) => {
-        subCard.addEventListener('click', () => {
-          const subId = (subCard as HTMLElement).dataset.browse;
-          const subTitle = (subCard as HTMLElement).querySelector('.card-title')?.textContent || '';
-          const subThumb = (subCard as HTMLElement).querySelector('img')?.src || '';
-          if (subId) openBrowse(subId, subTitle, subThumb, () => openBrowse(browseId, title, thumb, onBack));
-        });
-      });
-    } catch {
-      targetContainer.innerHTML = BROWSE_ERROR_HTML;
-      targetContainer.querySelector('#btnBrowseRetry')?.addEventListener('click', () => openBrowse(browseId, fallbackTitle, fallbackThumb, onBack));
-      targetContainer.querySelector('#btnBrowseBack')?.addEventListener('click', () => {
-        if (onBack) onBack();
-        else loadHome();
-      });
-    }
+    await openBrowseView({
+      getPage: () => state.page,
+      fetchBrowse: (id) => api.youtube.browse(id),
+      renderRow: (s, n) => songRow(s, n),
+      enterContext: (songs, name, type) => setContext(songs, name, type),
+      wireRowEvents: (c, t, ty) => attachSongEvents(c, t, ty),
+      openSub: (id, t, th, back) => openBrowse(id, t, th, back),
+      goSearch: (q) => doSearch(q),
+      goLibrary: () => loadLibrary(),
+      goHome: () => loadHome(),
+      getSearchQuery: () => ($('#searchInput') as HTMLInputElement)?.value ?? '',
+      retry: (id, t, th, back) => openBrowse(id, t, th, back),
+    }, browseId, fallbackTitle, fallbackThumb, onBack);
   }
 
   // ── Library ────────────────────────────────
   async function loadLibrary() {
-    const gen = state.navGeneration;
-    const container = $('#libraryContent');
-    container.innerHTML = CONTENT_LOADING_HTML;
-
-    // Yerel olarak dinlenenler
-    const localRecent = state.recentlyPlayed;
-
-    // YouTube Music kütüphanesi (giriş yapıldıysa)
-    let ytPlaylists: any[] = [];
-    let ytArtists: any[] = [];
-    let ytAlbums: any[] = [];
-
-    let libraryLoadError = false;
-    if (state.isLoggedIn) {
-      try {
-        [ytPlaylists, ytArtists, ytAlbums] = await Promise.all([
-          api.youtube.libraryPlaylists().catch(() => { libraryLoadError = true; return []; }),
-          api.youtube.libraryArtists().catch(() => { libraryLoadError = true; return []; }),
-          api.youtube.libraryAlbums().catch(() => { libraryLoadError = true; return []; })
-        ]);
-      } catch {
-        libraryLoadError = true;
-      }
-    }
-
-    if (isStaleContent(gen, state.navGeneration)) return; // stale, discard
-
-    let html = '';
-    const tab = normalizeLibraryTab(state.libraryTab);
-
-    // 1. Son Çalınanlar
-    if (shouldShowRecentSection(tab)) {
-      if (localRecent.length) {
-        html += buildSongSection(tab === 'recent' ? 'Son Çalınanlar' : 'Kütüphane Şarkıları', takeFirst(localRecent, RECENT_SONGS_LIMIT).map((s, i) => songRow(s, i + 1)).join(''));
-      }
-    }
-
-    // 2. Çalma Listeleri
-    if (shouldShowPlaylistSection(tab)) {
-      const localPlaylists = await api.store.get('playlists') || [];
-      if (localPlaylists.length) {
-        html += buildLibraryLocalPlaylistsSection(localPlaylists);
-      }
-
-      if (ytPlaylists.length) {
-        html += buildLibraryYtPlaylistsSection(ytPlaylists);
-      }
-    }
-
-    // 3. Albümler
-    if (shouldShowAlbumSection(tab)) {
-      if (ytAlbums.length) {
-        html += buildLibraryAlbumsSection(ytAlbums);
-      }
-    }
-
-    // Sanatçılar (genel kütüphanede veya albümler/listeler yokken destekleyici)
-    if (shouldShowArtistsSection(ytArtists.length, tab)) {
-      html += buildLibraryArtistsSection(ytArtists);
-    }
-
-    const libraryEmptyKind = resolveLibraryEmpty(!!html, libraryLoadError, state.isLoggedIn);
-    if (libraryEmptyKind !== 'content') {
-      container.innerHTML = libraryEmptyKind === 'error' ? LIBRARY_ERROR_HTML : LIBRARY_EMPTY_HTML;
-      if (libraryEmptyKind === 'error') {
-        container.querySelector('.btn-retry')?.addEventListener('click', () => loadLibrary());
-      }
-      return;
-    }
-
-    container.innerHTML = html;
-    attachSongEvents(container);
-
-    // Özel liste kartlarına tıklama
-    container.querySelectorAll('.card[data-local-pl]').forEach((card) => {
-      card.addEventListener('click', () => {
-        const plId = (card as HTMLElement).dataset.localPl;
-        if (plId) openLocalPlaylist(plId);
-      });
-    });
-
-    // YouTube kartlarına tıklama
-    container.querySelectorAll('.card[data-browse]').forEach((card) => {
-      card.addEventListener('click', async () => {
-        const browseId = (card as HTMLElement).dataset.browse;
-        if (!browseId) return;
+    return loadLibraryView({
+      getGen: () => state.navGeneration,
+      isStale: (gen) => isStaleContent(gen, state.navGeneration),
+      isLoggedIn: () => state.isLoggedIn,
+      getRecent: () => state.recentlyPlayed,
+      fetchPlaylists: () => api.youtube.libraryPlaylists(),
+      fetchArtists: () => api.youtube.libraryArtists(),
+      fetchAlbums: () => api.youtube.libraryAlbums(),
+      fetchLocalPlaylists: () => api.store.get('playlists'),
+      getTab: () => state.libraryTab,
+      renderRow: (s, n) => songRow(s, n),
+      wireRowEvents: (c) => attachSongEvents(c),
+      openLocalPlaylist: (plId) => openLocalPlaylist(plId),
+      playLibraryBrowse: async (browseId) => {
         try {
           const browseData = await api.youtube.browse(browseId);
           if (browseData.items?.length) {
-            const songs = browseData.items.filter((i: any) => i.id) as Song[];
+            const songs = browseData.items.filter((i: { id?: string }) => i.id) as Song[];
             if (songs.length) {
               setContext(songs, browseData.title || 'Kütüphane', 'playlist');
               state.queueIndex = 0;
@@ -1848,35 +1596,22 @@ function updatePlayIcon() {
             }
           }
         } catch {}
-      });
+      },
+      retry: () => loadLibrary(),
     });
   }
 
   async function loadLiked() {
-    const gen = state.navGeneration;
-    const container = $('#likedContent');
-
-    // Yerel beğenenler
-    const localLikes = Array.from(state.liked);
-
-    // YouTube Music beğenilenler (giriş yapıldıysa)
-    let ytLiked: Song[] = [];
-    if (state.isLoggedIn) {
-      try {
-        ytLiked = await api.youtube.likedSongs();
-      } catch {}
-    }
-
-    if (isStaleContent(gen, state.navGeneration)) return; // stale, discard
-
-    const ytRows = ytLiked.length ? ytLiked.map((s, i) => songRow(s, i + 1)).join('') : '';
-
-    // Yerel beğenilenler
-    const localSongs = resolveLocalLiked(localLikes, (id) => state.likedSongsMap[id] || songRegistry.get(id) || state.queue.find((s) => s.id === id) || state.recentlyPlayed.find((s) => s.id === id));
-    const localRows = localSongs.length ? localSongs.map((s, i) => songRow(s as Song, i + 1)).join('') : '';
-
-    container.innerHTML = buildLikedHtml(ytRows, localRows);
-    attachSongEvents(container, 'Beğenilen Şarkılar', 'playlist');
+    return loadLikedView({
+      getGen: () => state.navGeneration,
+      isStale: (gen) => isStaleContent(gen, state.navGeneration),
+      isLoggedIn: () => state.isLoggedIn,
+      fetchYtLiked: () => api.youtube.likedSongs(),
+      getLocalIds: () => Array.from(state.liked),
+      resolveLocal: (ids) => resolveLocalLiked(ids, (id) => state.likedSongsMap[id] || songRegistry.get(id) || state.queue.find((s) => s.id === id) || state.recentlyPlayed.find((s) => s.id === id)),
+      renderRow: (s, n) => songRow(s, n),
+      wireRowEvents: (c, t, ty) => attachSongEvents(c, t, ty),
+    });
   }
 
   // ── Media Session (OS media controls) ──────
@@ -2227,7 +1962,7 @@ function updatePlayIcon() {
       showToast('Discord çıkışı yapıldı.', 'info');
     });
 
-    // Bot Server (Port 9863) Ayarı (v1.0.1)
+    // Bot Server (Port 9863) Ayarı (v1.0.2)
     const botServerToggle = $('#botServerEnabled') as HTMLInputElement;
     const botServerStatus = $('#botServerStatus');
     if (botServerToggle && (api as any).botServer) {
@@ -2245,7 +1980,7 @@ function updatePlayIcon() {
       });
     }
 
-    // Token koruması (v1.0.1 + M-08): açıkken /api/v1/state Bearer token ister
+    // Token koruması (v1.0.2 + M-08): açıkken /api/v1/state Bearer token ister
     const botAuthToggle = $('#botServerAuth') as HTMLInputElement;
     const botTokenInput = $('#botServerToken') as HTMLInputElement;
     const btnRegen = $('#btnRegenToken');

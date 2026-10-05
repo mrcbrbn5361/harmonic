@@ -3,9 +3,9 @@
 import { app } from 'electron';
 
 export const CHROME_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
-export const YT_CLIENT_VERSION = '1.20241001.00.00';
+export const YT_CLIENT_VERSION = '1.20250924.01.00';
 
 export function appVersion(): string {
   try {

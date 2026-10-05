@@ -16,7 +16,7 @@ import type { Song } from './state';
 
 /** doLoginMusic açılış toast'u (app.ts ile birebir). */
 export const CHROME_LOGIN_TOAST =
-  "Chrome açılıyor... YouTube Music'e giriş yapıp buraya dönün.";
+  "Chrome açılıyor... YouTube Music'e giriş yapın ve buraya dönün.";
 
 /** loginMusic açma hatası guard'ı: opened?.opened yoksa hata. */
 export function isLoginOpenFailure(opened: { opened?: unknown; error?: unknown } | null | undefined): boolean {
@@ -56,13 +56,43 @@ export function buildImportSuccessText(userName: string | undefined, cookies: un
 
 /** Import hata durum satırı (app.ts `r?.error || ...` ile birebir). */
 export function buildImportFailureText(error: unknown): string {
-  return `Hata: ${String((error as string) || 'Pencerede giriş yapılmamış')}`;
+  return `Aktarım tamamlanamadı: ${String((error as string) || 'Pencerede giriş tamamlanmamış görünüyor.')}`;
 }
 
 /** Import exception durum satırı (app.ts catch ile birebir). */
 export function buildImportExceptionText(e: unknown): string {
   const msg = (e as { message?: unknown })?.message;
-  return `Hata: ${String(msg || String(e))}`;
+  if (isImportWindowClosedError(msg ?? e)) return IMPORT_WINDOW_CLOSED_TR;
+  return `Aktarım tamamlanamadı: ${String(msg || String(e))}`;
+}
+
+/** Giriş penceresi kapatıldığında gösterilecek yönlendirme (nötr, sizli). */
+export const IMPORT_WINDOW_CLOSED_TR =
+  'Giriş penceresi kapatılmış. Devam etmek için giriş penceresini yeniden açın.';
+
+/** Kapanan-pencere hatası mı (main 'Pencere kapatıldı' + Chromium close kalıpları). */
+export function isImportWindowClosedError(error: unknown): boolean {
+  const s = String(
+    (error as { message?: unknown })?.message ?? (error as string) ?? '',
+  ).toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes('pencere kapatıldı')
+    || s.includes('pencere kapatil')
+    || s.includes('window was closed')
+    || s.includes('window closed')
+  );
+}
+
+/** Verify/challenge'da gösterilecek yönlendirme (main VERIFY_HELP_TR ile birebir). */
+export const VERIFY_HELP_TR =
+  "Google kimliğinizi doğrulamanızı istiyor. 1) Normal Chrome'da music.youtube.com adresine giriş yapın. 2) Buraya dönüp 'Girişi Aktar' düğmesini kullanın.";
+
+/** Import hatası + verify durumu → gösterilecek metin (kapanan pencere önce, sonra verify). */
+export function resolveImportFailureWithVerify(error: unknown, verifyChallenge: boolean): string {
+  if (isImportWindowClosedError(error)) return IMPORT_WINDOW_CLOSED_TR;
+  if (verifyChallenge) return VERIFY_HELP_TR;
+  return buildImportFailureText(error);
 }
 
 /** Kirli kullanıcı adını temizle: sanitize boşsa '' (app.ts updateAuthUI guard ile birebir). */

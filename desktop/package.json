@@ -1,6 +1,6 @@
 {
   "name": "harmonic",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Harmonic - Premium music streaming for Windows 11",
   "main": "dist/main/main.js",
   "author": "Harmonic Team",

@@ -47,6 +47,7 @@ const api = {
     setGoogleConfig: (config: { clientId: string; clientSecret: string }) => ipcRenderer.invoke('auth:setGoogleConfig', config),
     getGoogleConfig: () => ipcRenderer.invoke('auth:getGoogleConfig'),
     loginMusic: () => ipcRenderer.invoke('auth:openChromeLogin'),
+    getLoginState: () => ipcRenderer.invoke('auth:getLoginState'),
     importFromChrome: () => ipcRenderer.invoke('auth:importFromChrome'),
     logoutMusic: () => ipcRenderer.invoke('auth:logoutMusic'),
     isMusicAuthenticated: () => ipcRenderer.invoke('auth:isMusicAuthenticated'),

@@ -62,7 +62,11 @@ function createWindow(): void {
         contextIsolation: true,
         preload: path.join(__dirname, 'preload.js'),
         webSecurity: true,
-        // Preload yalnızca contextBridge IPC köprüsü sunduğu için sandbox güvenli (bk. M-09).
+        // NOT: ana pencere bilinçli olarak default partition'dadır — Google
+        // cookie'leri yalnızca persist:harmonic tarafında yaşar (login +
+        // StreamResolver gizli penceresi). Renderer cookie'yi DOM'dan değil,
+        // header enjeksiyonu (cookie provider) üzerinden kullanır; ana pencereyi
+        // persist:harmonic'e almak renderer'a cookie erişimi açardı.
         sandbox: true
       }
   });
@@ -195,7 +199,7 @@ function isAllowedExternalUrl(raw: string): boolean {
     const u = new URL(String(raw));
     if (u.protocol !== 'https:') return false;
     const host = u.hostname.toLowerCase();
-    const allowed = ['music.youtube.com', 'youtube.com', 'www.youtube.com', 'github.com', 'ytimg.com'];
+    const allowed = ['music.youtube.com', 'youtube.com', 'www.youtube.com', 'github.com', 'ytimg.com', 'accounts.google.com', 'accounts.youtube.com'];
     return allowed.some((h) => host === h || host.endsWith('.' + h));
   } catch {
     return false;
@@ -445,7 +449,14 @@ function setupIPC(): void {
   ipcMain.handle('auth:openChromeLogin', async () => {
     return await musicAuth.openChromeLogin();
   });
+  // Giriş penceresi verify/challenge durumu (renderer "Chrome'da tamamla" dalı).
+  ipcMain.handle('auth:getLoginState', () => musicAuth.getLoginState());
   ipcMain.handle('auth:importFromChrome', async () => {
+    // Verify early-return: challenge ekranındayken dış Chrome'a otomatik düşme.
+    try {
+      const st = musicAuth.getLoginState();
+      if (st.verifyChallenge) return { success: false, cookies: 0, error: st.help };
+    } catch {}
     let result = await musicAuth.importFromChrome();
     if (!result.success) {
       const target = await musicAuth.findYouTubeMusicTarget().catch(()=>null);

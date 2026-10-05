@@ -10,6 +10,10 @@ import {
   buildImportSuccessText,
   buildImportFailureText,
   buildImportExceptionText,
+  IMPORT_WINDOW_CLOSED_TR,
+  isImportWindowClosedError,
+  VERIFY_HELP_TR,
+  resolveImportFailureWithVerify,
   normalizeUserName,
   buildChromeImportModalHtml,
   MEDIA_SEEK_STEP,
@@ -103,13 +107,28 @@ describe('auth / chrome import', () => {
     expect(buildImportSuccessText('Ada', 12)).toContain('Ada');
     expect(buildImportSuccessText('', 3)).toContain('Giriş');
     expect(buildImportFailureText('bad')).toContain('bad');
-    expect(buildImportFailureText(undefined)).toContain('Pencerede giriş yapılmamış');
+    expect(buildImportFailureText('bad')).toContain('Aktarım tamamlanamadı');
+    expect(buildImportFailureText(undefined)).toContain('Pencerede giriş tamamlanmamış');
     expect(buildImportExceptionText(new Error('boom'))).toContain('boom');
     expect(buildImportExceptionText('oops')).toContain('oops');
+    expect(buildImportExceptionText(new Error('Pencere kapatıldı'))).toBe(IMPORT_WINDOW_CLOSED_TR);
+  });
+  it('detects closed login window', () => {
+    expect(isImportWindowClosedError('Pencere kapatıldı')).toBe(true);
+    expect(isImportWindowClosedError(new Error('Window was closed'))).toBe(true);
+    expect(isImportWindowClosedError('bad')).toBe(false);
+    expect(isImportWindowClosedError(undefined)).toBe(false);
+    expect(resolveImportFailureWithVerify('Pencere kapatıldı', true)).toBe(IMPORT_WINDOW_CLOSED_TR);
+    expect(IMPORT_WINDOW_CLOSED_TR).toContain('yeniden açın');
   });
   it('normalizes user name', () => {
     expect(normalizeUserName('Ada', 'Ada')).toBe('Ada');
     expect(normalizeUserName('  ', '')).toBe('');
+  });
+  it('resolves verify failure to Chrome guidance', () => {
+    expect(resolveImportFailureWithVerify('bad', true)).toBe(VERIFY_HELP_TR);
+    expect(resolveImportFailureWithVerify('bad', false)).toContain('bad');
+    expect(VERIFY_HELP_TR).toContain('Girişi Aktar');
   });
   it('builds chrome import modal (external found)', () => {
     const html = buildChromeImportModalHtml(true);
